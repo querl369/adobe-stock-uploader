@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { uploadImage, deleteImage } from './cloudinary';
 import { generateMetadata } from './openai';
-import { renameImages, convertPngToJpeg } from './files_manipulation';
+import { renameImages, convertPngToJpeg } from './files-manipulation';
 
 import { writeMetadataToCSV, Metadata } from './csv-writer';
 
