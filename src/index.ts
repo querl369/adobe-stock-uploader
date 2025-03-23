@@ -2,22 +2,24 @@ import fs from 'fs';
 import path from 'path';
 import { uploadImage, deleteImage } from './cloudinary';
 import { generateMetadata } from './openai';
+import { renameImages, convertPngToJpeg } from './files_manipulation';
 
 import { writeMetadataToCSV, Metadata } from './csv-writer';
 
 async function processImages(imageDir: string, outputCsvPath: string) {
     const metadataList: Metadata[] = [];
 
-    const files = fs.readdirSync(imageDir).filter(file => /\.(jpg|jpeg|png)$/i.test(file));
+    await convertPngToJpeg({ inputDir: imageDir, outputDir: imageDir });
+    const renamedFiles = await renameImages(imageDir);
     
     // Define a concurrency limit to avoid overwhelming the APIs
     const CONCURRENCY_LIMIT = 3;
     
     // Process images in batches
-    for (let i = 0; i < files.length; i += CONCURRENCY_LIMIT) {
-        const batch = files.slice(i, i + CONCURRENCY_LIMIT);
+    for (let i = 0; i < renamedFiles.length; i += CONCURRENCY_LIMIT) {
+        const batch = renamedFiles.slice(i, i + CONCURRENCY_LIMIT);
         
-        console.log(`Processing batch ${i / CONCURRENCY_LIMIT + 1} of ${Math.ceil(files.length / CONCURRENCY_LIMIT)}`);
+        console.log(`Processing batch ${i / CONCURRENCY_LIMIT + 1} of ${Math.ceil(renamedFiles.length / CONCURRENCY_LIMIT)}`);
         
         // Process this batch in parallel
         const batchResults = await Promise.all(
@@ -54,7 +56,7 @@ async function processImages(imageDir: string, outputCsvPath: string) {
     }
 
     await writeMetadataToCSV(metadataList, outputCsvPath);
-    console.log(`Processed ${metadataList.length} of ${files.length} images successfully.`);
+    console.log(`Processed ${metadataList.length} of ${renamedFiles.length} images successfully.`);
 }
   
 const imageDirectory = path.resolve(__dirname, '../images');
