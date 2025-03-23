@@ -1,4 +1,6 @@
 images/
+content_calendar/
+csv_output/
 node_modules
 dist
 .env
