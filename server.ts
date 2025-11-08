@@ -54,7 +54,8 @@ const PORT = 3000;
 
 // Middleware - allows receiving JSON data and serving static files
 app.use(express.json());
-app.use(express.static('public')); // Serves your HTML/CSS/JS files
+// Serve static files from Vite build
+app.use(express.static('dist'));
 
 // Configure file upload - saves uploaded images temporarily
 const storage: StorageEngine = multer.diskStorage({
@@ -83,23 +84,23 @@ const upload = multer({
 
 // Endpoint: Upload images
 // Called when user selects images in the web interface
-app.post('/api/upload', upload.array('images'), async (req: Request, res: Response) => {
+app.post('/api/upload', upload.single('image'), async (req: Request, res: Response) => {
   try {
-    const files = req.files as Express.Multer.File[];
+    const file = req.file as Express.Multer.File;
 
-    if (!files || files.length === 0) {
-      return res.status(400).json({ error: 'No files uploaded' });
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    // Return information about uploaded files
-    const fileInfo: UploadedFile[] = files.map(file => ({
+    // Return information about uploaded file
+    const fileInfo: UploadedFile = {
       id: file.filename,
       name: file.originalname,
       size: file.size,
       path: file.path,
-    }));
+    };
 
-    res.json({ success: true, files: fileInfo });
+    res.json({ success: true, file: fileInfo });
   } catch (error) {
     console.error('Upload error:', error);
     res.status(500).json({ error: (error as Error).message });
@@ -154,31 +155,59 @@ app.post('/api/process-image', async (req: Request, res: Response) => {
 // Endpoint: Process multiple images in batch
 app.post('/api/process-batch', async (req: Request, res: Response) => {
   try {
-    const { files, initials } = req.body as {
-      files: UploadedFile[];
+    const { initials } = req.body as {
       initials: string;
     };
-    const results: ProcessResult[] = [];
+
+    if (!initials) {
+      return res.status(400).json({ error: 'Initials are required' });
+    }
+
+    const metadataList: Array<{
+      fileName: string;
+      title?: string;
+      keywords?: string;
+      category?: number;
+      error?: string;
+    }> = [];
 
     // Clean the images directory first to avoid processing old files
+    console.log('🧹 Cleaning images directory...');
     if (fs.existsSync('images')) {
       const existingFiles = fs.readdirSync('images');
       for (const file of existingFiles) {
-        if (file.match(/\.(jpg|jpeg|png)$/i)) {
+        if (file.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
           fs.unlinkSync(path.join('images', file));
-          console.log(`🗑️ Cleaned old file: ${file}`);
+          console.log(`   🗑️ Removed old file: ${file}`);
         }
       }
     }
 
+    // Check uploads directory
+    console.log('📂 Checking uploads directory...');
+    if (!fs.existsSync('uploads')) {
+      return res.status(400).json({ error: 'No files uploaded yet. Please upload images first.' });
+    }
+
+    const uploadedFiles = fs.readdirSync('uploads').filter(file => 
+      file.match(/\.(jpg|jpeg|png|gif|webp)$/i)
+    );
+
+    console.log(`   Found ${uploadedFiles.length} files in uploads:`, uploadedFiles.map(f => f.substring(0, 30) + '...'));
+
+    if (uploadedFiles.length === 0) {
+      return res.status(400).json({ error: 'No image files found in uploads directory' });
+    }
+
     // Copy uploaded files to images directory
-    for (const file of files) {
-      const srcPath = path.join('uploads', file.id);
-      const destPath = path.join('images', file.name);
+    console.log('📋 Copying files to images directory...');
+    for (const file of uploadedFiles) {
+      const srcPath = path.join('uploads', file);
+      const destPath = path.join('images', file);
 
       if (fs.existsSync(srcPath)) {
         fs.copyFileSync(srcPath, destPath);
-        console.log(`📋 Copied: ${file.name}`);
+        console.log(`   ✅ Copied: ${file}`);
       }
     }
 
@@ -209,24 +238,55 @@ app.post('/api/process-batch', async (req: Request, res: Response) => {
         // Delete from Cloudinary
         await deleteImage(publicId);
 
-        results.push({
-          success: true,
-          filename: file,
+        metadataList.push({
+          fileName: file,
           title: metadata.title,
           keywords: metadata.keywords,
           category: metadata.category,
         });
       } catch (error) {
         console.error(`Error processing ${file}:`, error);
-        results.push({
-          success: false,
-          filename: file,
+        metadataList.push({
+          fileName: file,
           error: (error as Error).message,
         });
       }
     }
 
-    res.json({ success: true, results });
+    // Generate CSV file
+    const csvFileName = `${initials}_${Date.now()}.csv`;
+    const csvPath = path.join('csv_output', csvFileName);
+
+    // Prepare metadata for CSV (only successful ones)
+    const successfulMetadata = metadataList
+      .filter(item => !item.error)
+      .map(item => ({
+        filename: item.fileName,
+        title: item.title || '',
+        keywords: item.keywords || '',
+        category: String(item.category || ''),
+        releases: initials,
+      }));
+
+    if (successfulMetadata.length > 0) {
+      await writeMetadataToCSV(successfulMetadata, csvPath);
+      console.log(`✅ CSV file created: ${csvFileName}`);
+    }
+
+    // Clean up uploads directory
+    for (const file of uploadedFiles) {
+      const filePath = path.join('uploads', file);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    }
+    console.log('🧹 Cleaned uploads directory');
+
+    res.json({ 
+      success: true, 
+      metadataList,
+      csvFileName 
+    });
   } catch (error) {
     console.error('Batch processing error:', error);
     res.status(500).json({ error: (error as Error).message });
@@ -236,29 +296,28 @@ app.post('/api/process-batch', async (req: Request, res: Response) => {
 // Endpoint: Export metadata to CSV
 app.post('/api/export-csv', async (req: Request, res: Response) => {
   try {
-    const { metadata, initials } = req.body as {
-      metadata: MetadataItem[];
-      initials: string;
+    const { csvFileName } = req.body as {
+      csvFileName: string;
     };
 
-    const outputPath = path.join('csv_output', `${initials}_${Date.now()}.csv`);
+    if (!csvFileName) {
+      return res.status(400).json({ error: 'CSV filename is required' });
+    }
 
-    // Add releases field (your name/initials)
-    const metadataWithReleases: MetadataItem[] = metadata.map(item => ({
-      filename: item.filename,
-      title: item.title,
-      keywords: item.keywords,
-      category: item.category,
-      releases: initials,
-    }));
+    const csvPath = path.join('csv_output', csvFileName);
 
-    // Write to CSV using your existing function
-    await writeMetadataToCSV(metadataWithReleases, outputPath);
+    if (!fs.existsSync(csvPath)) {
+      return res.status(404).json({ error: 'CSV file not found' });
+    }
 
-    console.log(`CSV exported to ${outputPath}`);
+    console.log(`📥 Downloading CSV: ${csvFileName}`);
 
     // Send the CSV file as download
-    res.download(outputPath, path.basename(outputPath));
+    res.download(csvPath, csvFileName, (err) => {
+      if (err) {
+        console.error('Error downloading CSV:', err);
+      }
+    });
   } catch (error) {
     console.error('CSV export error:', error);
     res.status(500).json({ error: (error as Error).message });
@@ -290,6 +349,16 @@ app.post('/api/cleanup', (req: Request, res: Response) => {
   } catch (error) {
     console.error('Cleanup error:', error);
     res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// ============================================
+// SPA Fallback - Serve index.html for all non-API routes
+// ============================================
+
+app.get('*', (req: Request, res: Response) => {
+  if (!req.path.startsWith('/api')) {
+    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
   }
 });
 
