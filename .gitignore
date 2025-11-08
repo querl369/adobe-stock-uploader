@@ -6,3 +6,15 @@ node_modules
 dist
 .env
 .DS_Store
+
+# Compiled TypeScript
+public/app.js
+public/app.js.map
+*.js.map
+
+# Temporary uploads
+uploads/
+
+# Build files
+build/
+*.tsbuildinfo

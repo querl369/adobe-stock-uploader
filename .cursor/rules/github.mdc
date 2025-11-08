@@ -1,0 +1,27 @@
+---
+description: Github rules for the project
+globs:
+alwaysApply: true
+---
+
+## Commit Message Format
+
+Use the following format for all commits:
+
+```
+ASU-{short 10-15 words description what was done in this commit}
+```
+
+**Examples:**
+- `ASU-Add unit tests for file manipulation and CSV writer`
+- `ASU-Fix image upload bug in batch processing endpoint`
+- `ASU-Update OpenAI API to use GPT-5-mini model`
+- `ASU-Implement pre-commit hooks with Husky and Vitest`
+- `ASU-Refactor server error handling for better user feedback`
+
+**Guidelines:**
+- Keep the description concise (10-15 words)
+- Use present tense (Add, Fix, Update, Implement, Refactor)
+- Be specific about what changed
+- Focus on the "what" not the "how"
+    

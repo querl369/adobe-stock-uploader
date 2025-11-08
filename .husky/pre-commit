@@ -1,0 +1,5 @@
+# Run tests before commit
+npm test
+
+# Run lint-staged for code quality checks
+npx lint-staged

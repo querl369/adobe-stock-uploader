@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Adobe Stock Uploader</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>📸 Adobe Stock Uploader</h1>
+            <p>Upload images, generate metadata with AI, and export to CSV</p>
+        </header>
+
+        <!-- Step 1: Upload Images -->
+        <section class="section">
+            <h2>Step 1: Upload Images</h2>
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-content">
+                    <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    <p>Drag & drop images here or click to browse</p>
+                    <input type="file" id="fileInput" accept="image/*" multiple hidden>
+                    <button class="btn btn-primary">
+                        Select Images
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Uploaded Files List -->
+            <div id="filesList" class="files-list"></div>
+        </section>
+
+        <!-- Step 2: Enter Initials -->
+        <section class="section">
+            <h2>Step 2: Enter Your Initials</h2>
+            <div class="form-group">
+                <input type="text" id="initials" placeholder="e.g., OY" maxlength="5" class="input">
+                <p class="help-text">Your initials will be used to rename images and in the CSV export</p>
+            </div>
+        </section>
+
+        <!-- Step 3: Process Images -->
+        <section class="section">
+            <h2>Step 3: Process Images</h2>
+            <div class="button-group">
+                <button class="btn btn-success" id="processBtn" onclick="processImages()">
+                    🚀 Generate Metadata with AI
+                </button>
+                <button class="btn btn-secondary" onclick="clearAll()">
+                    🔄 Clear All
+                </button>
+            </div>
+
+            <!-- Progress Bar -->
+            <div id="progressContainer" class="progress-container" style="display: none;">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <p id="progressText" class="progress-text">Processing...</p>
+            </div>
+        </section>
+
+        <!-- Step 4: Review & Export -->
+        <section class="section" id="resultsSection" style="display: none;">
+            <h2>Step 4: Review & Export</h2>
+            
+            <!-- Results Table -->
+            <div class="table-container">
+                <table class="results-table">
+                    <thead>
+                        <tr>
+                            <th>Filename</th>
+                            <th>Title</th>
+                            <th>Keywords</th>
+                            <th>Category</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsBody">
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Export Button -->
+            <div class="button-group">
+                <button class="btn btn-primary btn-large" id="exportBtn" onclick="exportCSV()">
+                    📥 Download CSV for Adobe Stock
+                </button>
+            </div>
+        </section>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="spinner"></div>
+        <p>Processing images with AI...</p>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
+

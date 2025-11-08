@@ -11,22 +11,22 @@ This script is designed to analize images in a specified directory, rename them,
 ## Setup
 
 1. Clone the repository:
-```git clone https://github.com/oleksii-yemets/adobe-stock-uploader.git```
+   `git clone https://github.com/oleksii-yemets/adobe-stock-uploader.git`
 
 2. Set up environment variables:
-```cp .env.example .env```
+   `cp .env.example .env`
 
 3. Add your Cloudinary credentials and OpenAI API key to the `.env` file.
 
 4. Install dependencies:
-```npm i```
+   `npm i`
 
 5. Create an `images` and `csv_output` directories in the root of the project.
 
 6. Change prompt text in `src/prompt-text.ts`.
 
 7. Run the script:
-```npm run start```
+   `npm run start`
 
 ## Working with Real-ESRGAN to upscale images
 
@@ -37,10 +37,14 @@ This script is designed to analize images in a specified directory, rename them,
 - A compatible version of PyTorch (1.7 or higher)
 
 2. By testing Real-ESRGAN, I found out that versions for PyTorch that are compatible with Real-ESRGAN itself:
+
 - torch==2.0.1 torchvision==0.15.2
-```pip install torch==2.0.1 torchvision==0.15.2 --extra-index-url https://download.pytorch.org/whl/cu118```
+  `pip install torch==2.0.1 torchvision==0.15.2 --extra-index-url https://download.pytorch.org/whl/cu118`
 - numpy==1.26.4
-```pip install numpy==1.26.4```
+  `pip install numpy==1.26.4`
+
+!!!ONLY FOR GOOGLE COLAB!!!
+`python inference_realesrgan.py -n RealESRGAN_x4plus -i upload --outscale 7 --tile 70 --ext jpg --face_enhance`
 
 ## Usage
 
