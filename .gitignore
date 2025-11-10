@@ -18,3 +18,6 @@ uploads/
 # Build files
 build/
 *.tsbuildinfo
+
+# Cursor rules
+.cursor/
