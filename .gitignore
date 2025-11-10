@@ -18,5 +18,3 @@ uploads/
 # Build files
 build/
 *.tsbuildinfo
-
-.cursor/
