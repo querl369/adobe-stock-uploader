@@ -22,38 +22,65 @@ The project is organized into **6 strategic epics** that follow the natural prod
 5. **User Interface & Experience** - Elegant, photographer-focused dark mode UI
 6. **User Account System** - Optional free tier with history and enhanced limits
 
-**Development Sequence:** Foundation → Core Processing → Intelligence → Export → UI → Accounts
+**Development Sequence:** Foundation Refactoring (Epic 1) → Core Processing → Intelligence → Export → UI → Accounts
 
-**Total Estimated Stories:** ~30-35 stories across 6 epics
+**Total Estimated Stories:** ~40 stories across 6 epics
+
+**Epic 1 Stories:** 11 stories (4-5 development days)
 
 ---
 
 ## Epic 1: Architecture Review & Foundation Refactoring
 
-**Goal:** Transform current flat utility-based architecture into modular, scalable structure that supports PRD requirements (user accounts, rate limiting, self-hosted processing).
+**🚨 PRIORITY: CRITICAL - START HERE FIRST**
 
-**Business Value:** Establishes technical foundation that enables all MVP features and future growth.
+**Goal:** Transform current prototype architecture into production-ready, scalable infrastructure following the comprehensive refactoring plan.
 
-**Current State Issues:**
+**Business Value:** Establishes technical foundation that enables all MVP features, eliminates external costs (Cloudinary), and improves processing speed 2-3x.
+
+**Current State Issues (4.0/10 Production Readiness):**
 
 - Flat `src/` structure with 6 utility files mixing concerns
-- Cloudinary dependency (external cost per image)
-- Duplicate processing logic in `index.ts` vs `server.ts`
-- No structure for authentication, rate limiting, or user management
-- No database layer or models
+- Cloudinary dependency ($0.01-0.02 per image cost)
+- Silent error failures (lost work, no visibility)
+- Configuration hardcoding (`initials = 'OY'`)
+- No abstraction layers (tight coupling)
+- Missing observability (only console.log)
 
-**Target Architecture:**
+**Target Architecture (8.5/10 Production Readiness):**
 
 ```
 src/
 ├── api/
 │   ├── routes/         # Express route handlers
-│   └── middleware/     # Auth, rate limiting, validation
-├── services/           # Business logic layer
-├── models/             # Database models & types
-├── utils/              # Pure utility functions
-└── config/             # Configuration & setup
+│   ├── middleware/     # Error handling, validation, logging
+│   └── types/          # Request/response types
+├── services/           # Business logic layer (DI pattern)
+├── models/             # Data models & interfaces
+├── utils/              # Pure utility functions (retry, logger)
+├── config/             # Configuration, validation, DI container
+└── server.ts          # Application entry point
 ```
+
+**Timeline:** 4-5 development days (Phases 1-3)
+
+**Reference:** See [ARCHITECTURE_REFACTORING_GUIDE.md](./ARCHITECTURE_REFACTORING_GUIDE.md) for complete implementation details.
+
+---
+
+## 🚀 Development Starts Here
+
+**Epic 1 Stories are the foundation. Complete these before any other epic.**
+
+**Why This Matters:**
+
+- Eliminates $0.01-0.02 per image cost (Cloudinary removal)
+- Improves processing speed 2-3x
+- Establishes production-ready patterns for all future code
+- Provides visibility into errors (no more silent failures)
+- Enables easy testing and maintenance
+
+**Implementation Order:** Stories 1.2 → 1.3 → 1.4 → 1.5 → 1.6 → 1.7 → 1.8 → 1.9 → 1.10 → 1.11
 
 ---
 
@@ -82,6 +109,18 @@ src/
 
 **Prerequisites:** None (first story)
 
+**Reference Documentation:** See [ARCHITECTURE_REFACTORING_GUIDE.md](./ARCHITECTURE_REFACTORING_GUIDE.md) for complete implementation plan.
+
+**Status:** ✅ COMPLETED - Comprehensive architectural review and refactoring plan created.
+
+**Deliverables:**
+
+- ✅ Code quality assessment (4.0/10 → 8.5/10 target)
+- ✅ Critical issues identified (6 priority issues documented)
+- ✅ 3-phase refactoring plan (Foundation → Services → Observability)
+- ✅ Complete implementation guide with code examples
+- ✅ Integration checklist and success criteria
+
 **Technical Notes:**
 
 - Review `src/index.ts`, `server.ts`, and all utility files
@@ -92,263 +131,601 @@ src/
 
 ---
 
-### Story 1.2: Core Directory Structure & Module Setup
+### Story 1.2: Configuration Service & Environment Setup
+
+**🔥 PHASE 1.1 - Start Here**
 
 **As a** developer,
-**I want** to establish the new modular directory structure,
-**So that** subsequent stories can organize code cleanly from the start.
+**I want** centralized, type-safe, validated configuration with Zod,
+**So that** all settings are validated on startup and hardcoded values are eliminated.
 
 **Acceptance Criteria:**
 
-**Given** the approved architecture from Story 1.1
-**When** I create the new directory structure
-**Then** the following directories should exist:
+**Given** scattered `process.env` access and hardcoded values in the codebase
+**When** I implement the configuration service
+**Then** the following should be created:
 
-- `src/api/routes/` - Express route handlers
-- `src/api/middleware/` - Authentication, rate limiting, validation
-- `src/services/` - Business logic layer
-- `src/models/` - TypeScript types and database models
-- `src/utils/` - Pure utility functions
-- `src/config/` - Configuration files (database, OpenAI, environment)
+- `src/config/app.config.ts` with Zod schema validation
+- `.env.example` documenting all required environment variables
+- Environment schema covering:
+  - Server config (PORT, BASE_URL, NODE_ENV)
+  - OpenAI config (API_KEY, MODEL, MAX_TOKENS, TEMPERATURE)
+  - Processing config (CONCURRENCY_LIMIT, MAX_FILE_SIZE_MB, TEMP_FILE_LIFETIME_SECONDS)
+  - Rate limiting config (ANONYMOUS_LIMIT, FREE_TIER_LIMIT)
 
-**And** each directory should have a README explaining its purpose and patterns
-**And** existing utility files should be migrated to appropriate locations:
+**And** configuration service should provide typed access:
 
-- `prompt-text.ts` → `utils/prompt-text.ts`
-- `csv-writer.ts` → `utils/csv-writer.ts`
-- Core logic from `files-manipulation.ts` → `services/image-processing.service.ts`
+```typescript
+config.server.port;
+config.openai.apiKey;
+config.processing.concurrencyLimit;
+config.rateLimits.anonymous;
+```
 
-**And** TypeScript path aliases should be configured for clean imports
-**And** existing tests should still pass (or be updated to new structure)
+**And** server should fail fast with clear error messages if configuration is invalid
+**And** hardcoded values removed from `src/openai.ts` (use config instead)
+**And** Easter bug fixed (remove line 28 from `src/prompt-text.ts`)
 
 **Prerequisites:** Story 1.1 (architecture plan approved)
 
+**Estimated Time:** 2-3 hours
+
+**Implementation Reference:** ARCHITECTURE_REFACTORING_GUIDE.md → Phase 1.1
+
 **Technical Notes:**
 
-- Update `tsconfig.json` with path aliases (`@api/*`, `@services/*`, etc.)
-- Maintain backwards compatibility during migration
-- Update imports in `server.ts` to use new locations
-- Keep old files temporarily with deprecation comments
+```bash
+npm install zod pino pino-pretty
+```
+
+- Create `ConfigService` class with zod validation
+- Add typed getters for config sections
+- Update `src/openai.ts` to import and use config
+- Remove `const initials = 'OY'` hardcoding
+- Server logs validated config on startup (without sensitive values)
 
 ---
 
-### Story 1.3: Self-Hosted Temporary URL Infrastructure
+### Story 1.3: Directory Structure & TypeScript Path Aliases
+
+**🔥 PHASE 1.2**
+
+**As a** developer,
+**I want** to establish the new modular directory structure with TypeScript path aliases,
+**So that** subsequent development can follow clean architecture patterns.
+
+**Acceptance Criteria:**
+
+**Given** the configuration service from Story 1.2
+**When** I create the new directory structure
+**Then** the following directories should exist with README files:
+
+- `src/api/routes/` - Express route handlers (thin, delegate to services)
+- `src/api/middleware/` - Request processing (auth, validation, errors)
+- `src/api/types/` - Request/response TypeScript types
+- `src/services/` - Business logic layer (DI pattern)
+- `src/models/` - Data models & interfaces
+- `src/utils/` - Pure utility functions
+- `src/config/` - Configuration & DI container
+
+**And** TypeScript path aliases should be configured in `tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@api/*": ["src/api/*"],
+      "@services/*": ["src/services/*"],
+      "@models/*": ["src/models/*"],
+      "@config/*": ["src/config/*"],
+      "@utils/*": ["src/utils/*"]
+    }
+  }
+}
+```
+
+**And** each directory should have a README.md explaining purpose and patterns
+**And** existing code remains functional (no breaking changes yet)
+
+**Prerequisites:** Story 1.2 (configuration service)
+
+**Estimated Time:** 1 hour
+
+**Implementation Reference:** ARCHITECTURE_REFACTORING_GUIDE.md → Phase 1.2
+
+**Technical Notes:**
+
+```bash
+mkdir -p src/api/{routes,middleware,types}
+mkdir -p src/{services,models,config}
+```
+
+- Add README.md to each directory
+- Restart TypeScript server after tsconfig changes
+- Test that path aliases work with sample import
+
+---
+
+### Story 1.4: Self-Hosted Temporary URL Service
+
+**🔥 PHASE 1.3**
 
 **As a** product owner,
 **I want** images served temporarily from our server with secure UUID-based URLs,
-**So that** we eliminate Cloudinary costs and enable a generous free tier.
+**So that** we eliminate Cloudinary costs ($0.01-0.02 per image) and enable a generous free tier.
 
 **Acceptance Criteria:**
 
 **Given** an uploaded image needs processing
-**When** the system prepares it for OpenAI Vision API
-**Then** the image should be:
+**When** the TempUrlService creates a temporary URL
+**Then** the service should:
 
-- Compressed to 1024px max dimension, 85% quality JPEG (Sharp)
-- Saved to `/temp/{uuid}.jpg` with cryptographically random UUID
-- Served via Express static middleware at `https://domain.com/temp/{uuid}.jpg`
-- Accessible via public HTTPS URL (OpenAI requirement)
-- Automatically deleted after 10 seconds or after successful processing
+- Accept `Express.Multer.File` as input
+- Compress image with Sharp (1024px max dimension, 85% quality JPEG)
+- Generate cryptographically random UUID (`crypto.randomUUID()`)
+- Save compressed image to `/temp/{uuid}.jpg`
+- Return public URL: `${BASE_URL}/temp/{uuid}.jpg`
+- Schedule automatic cleanup after configured lifetime (default: 10 seconds)
 
-**And** the `/temp` directory should be created if not exists
-**And** old temp files (>1 minute) should be cleaned up on server start
-**And** a background cleanup job should run every 30 seconds to remove orphaned files
-**And** the temp URL should be unpredictable (prevent enumeration attacks)
+**And** Express should serve `/temp` directory as static files
+**And** background cleanup job should run every 30 seconds
+**And** old files (>1 minute) should be cleaned up automatically
+**And** the `/temp` directory should be created if it doesn't exist
 
-**Prerequisites:** Story 1.2 (directory structure established)
+**And** the service should implement:
+
+```typescript
+class TempUrlService {
+  createTempUrl(file: Express.Multer.File): Promise<string>;
+  cleanup(uuid: string): Promise<void>;
+  cleanupOldFiles(): Promise<void>;
+}
+```
+
+**Prerequisites:** Story 1.3 (directory structure created)
+
+**Estimated Time:** 2-3 hours
+
+**Implementation Reference:** ARCHITECTURE_REFACTORING_GUIDE.md → Phase 1.3
 
 **Technical Notes:**
 
-- Create `src/services/temp-url.service.ts` with:
-  - `createTempUrl(filePath: string): Promise<string>`
-  - `cleanupTempFile(uuid: string): void`
-  - `cleanupOldFiles(): void` (background job)
-- Use `crypto.randomUUID()` for secure IDs
-- Configure Express to serve `/temp` as static with proper HTTPS headers
-- Implement file age-based cleanup (check `fs.statSync().mtime`)
-- Add environment variable for base URL (Railway/Render domain)
+- Create `src/services/temp-url.service.ts`
+- Use Sharp for image compression
+- Configure Express static middleware in `server.ts`:
+  ```typescript
+  app.use('/temp', express.static(path.join(process.cwd(), 'temp')));
+  ```
+- Implement `scheduleCleanup()` with `setTimeout`
+- Start background cleanup job in constructor with `setInterval`
+- Use config service for BASE_URL and TEMP_FILE_LIFETIME_SECONDS
 
 ---
 
-### Story 1.4: Remove Cloudinary Dependency
+### Story 1.5: Remove Cloudinary Dependency
+
+**🔥 PHASE 1.3 (Part 2)**
 
 **As a** developer,
 **I want** to remove all Cloudinary integration code,
-**So that** we use only self-hosted temp URLs and eliminate external costs.
+**So that** we use only self-hosted temp URLs and eliminate $0.01-0.02 per image cost.
 
 **Acceptance Criteria:**
 
-**Given** the self-hosted temp URL service from Story 1.3 is operational
-**When** I refactor the image processing flow
-**Then** Cloudinary should be completely removed:
+**Given** the self-hosted TempUrlService from Story 1.4 is operational
+**When** I remove Cloudinary integration
+**Then** the following should be completed:
 
-- Delete `src/cloudinary.ts`
-- Remove Cloudinary npm package and environment variables
-- Update `server.ts` endpoints to use temp URL service instead
-- Refactor processing logic to use local temp URLs
-- Update all tests to mock temp URL service (not Cloudinary)
+- Delete `src/cloudinary.ts` file
+- Uninstall Cloudinary npm package: `npm uninstall cloudinary`
+- Remove Cloudinary environment variables from `.env` and `.env.example`:
+  - `CLOUDINARY_CLOUD_NAME`
+  - `CLOUDINARY_API_KEY`
+  - `CLOUDINARY_API_SECRET`
+- Update image processing code to use TempUrlService instead
+- Remove all Cloudinary import statements
 
-**And** the processing flow should become:
+**And** the new processing flow should be:
 
-1. Receive uploaded image
-2. Compress with Sharp
-3. Generate temp UUID and save to `/temp/{uuid}.jpg`
-4. Create public HTTPS URL
-5. Send URL to OpenAI Vision API
-6. Receive metadata
-7. Delete temp file immediately
-8. Return metadata to client
+1. Receive uploaded image (multer)
+2. Call `tempUrlService.createTempUrl(file)` → compresses & saves to `/temp/{uuid}.jpg`
+3. Receive public HTTPS URL
+4. Send URL to OpenAI Vision API
+5. Receive metadata
+6. Cleanup handled automatically by TempUrlService
+7. Return metadata to client
 
-**And** zero external API calls should be made except to OpenAI
-**And** processing speed should be equivalent or faster (no Cloudinary network delay)
+**And** zero external API calls except OpenAI (cost savings achieved)
+**And** processing speed should improve (no Cloudinary network delay)
+**And** all existing functionality should still work
 
-**Prerequisites:** Story 1.3 (temp URL infrastructure working)
+**Prerequisites:** Story 1.4 (TempUrlService implemented and tested)
+
+**Estimated Time:** 1 hour
+
+**Implementation Reference:** ARCHITECTURE_REFACTORING_GUIDE.md → Phase 1.3
 
 **Technical Notes:**
 
-- Update `processImage` function to use `tempUrlService.createTempUrl()`
-- Ensure cleanup happens in all code paths (success, error, timeout)
-- Add try-finally block to guarantee temp file deletion
-- Benchmark processing time before/after to confirm no regression
-- Update integration tests to verify no Cloudinary calls
+```bash
+npm uninstall cloudinary
+rm src/cloudinary.ts
+```
+
+- Update `src/openai.ts` or processing logic to use TempUrlService
+- Ensure cleanup happens even on errors (try-finally patterns)
+- Update any tests that mocked Cloudinary
+- Verify no Cloudinary imports remain: `grep -r "cloudinary" src/`
+- Test end-to-end image processing still works
 
 ---
 
-### Story 1.5: Database Schema & PostgreSQL Setup
+### Story 1.6: Error Architecture & Typed Errors
+
+**🔥 PHASE 2.1 - Service Layer Foundation**
 
 **As a** developer,
-**I want** to set up PostgreSQL with schema for users and usage tracking,
-**So that** we can support user accounts and quota management in future epics.
+**I want** typed error classes and centralized error handling middleware,
+**So that** errors are handled gracefully with visibility instead of silent failures (`catch(error) { return null }`).
 
 **Acceptance Criteria:**
 
-**Given** the need for user accounts and usage tracking
-**When** I set up the database infrastructure
-**Then** the following should be implemented:
+**Given** the current codebase has silent error failures
+**When** I implement typed error architecture
+**Then** the following should be created:
 
-- PostgreSQL connection configuration in `src/config/database.ts`
-- Database migration tool (e.g., Prisma, TypeORM, or node-pg-migrate)
-- Schema for `users` table:
-  - `id` (UUID, primary key)
-  - `email` (unique, indexed)
-  - `password_hash` (bcrypt)
-  - `tier` (enum: anonymous, free, paid)
-  - `created_at`, `updated_at`
-- Schema for `processing_batches` table:
-  - `id` (UUID, primary key)
-  - `user_id` (FK to users, nullable for anonymous)
-  - `image_count`
-  - `status` (enum: processing, completed, failed)
-  - `csv_filename`
-  - `created_at`
-- Schema for `usage_tracking` table:
-  - `id` (UUID, primary key)
-  - `user_id` (FK to users)
-  - `month_year` (date, indexed)
-  - `images_processed` (integer)
-
-**And** database connection should use environment variables for credentials
-**And** connection pooling should be configured (max 10 connections for MVP)
-**And** migrations should run automatically on server start (development mode)
-**And** database models should be created in `src/models/`
-
-**Prerequisites:** Story 1.2 (directory structure ready)
-
-**Technical Notes:**
-
-- Use Prisma for type-safe database access and migrations
-- Create `prisma/schema.prisma` with models
-- Generate Prisma Client for TypeScript types
-- Implement `src/config/database.ts` with connection logic
-- Add database health check endpoint: `GET /api/health`
-- Use Railway Postgres (free tier) or Render Postgres
-- Document local development setup (Docker Compose for Postgres)
-
----
-
-### Story 1.6: Error Handling & Logging Infrastructure
-
-**As a** developer,
-**I want** centralized error handling and structured logging,
-**So that** debugging is easier and errors are gracefully handled for users.
-
-**Acceptance Criteria:**
-
-**Given** the need for robust error handling across the application
-**When** I implement centralized error infrastructure
-**Then** the following should exist:
-
-- Global error handler middleware in `src/api/middleware/error-handler.middleware.ts`
-- Custom error classes in `src/utils/errors.ts`:
+- `src/models/errors.ts` with custom error classes:
+  - `AppError` (base class with code, statusCode, context)
   - `ValidationError` (400 responses)
-  - `AuthenticationError` (401 responses)
+  - `ProcessingError` (500 responses, with filename & stage tracking)
+  - `ExternalServiceError` (502 responses, for OpenAI/filesystem)
   - `RateLimitError` (429 responses)
-  - `ProcessingError` (500 responses)
-- Structured logging service in `src/utils/logger.ts`:
-  - Different log levels (info, warn, error)
-  - JSON format for production (easy parsing)
-  - Pretty format for development
-  - Request ID tracking (for tracing)
 
-**And** all API routes should use try-catch with proper error throwing
-**And** OpenAI API errors should be caught and transformed to user-friendly messages
-**And** errors should never expose sensitive information (API keys, stack traces in prod)
-**And** HTTP response format should be consistent: `{ success: boolean, error?: string, data?: any }`
+**And** error handler middleware should be created:
 
-**Prerequisites:** Story 1.2 (directory structure ready)
+- `src/api/middleware/error-handler.ts` with:
+  - `errorHandler(err, req, res, next)` - Express error middleware
+  - `asyncHandler(fn)` - Wrapper for async route handlers
+- Consistent JSON response format:
+  ```json
+  {
+    "success": false,
+    "error": {
+      "code": "PROCESSING_ERROR",
+      "message": "User-friendly message",
+      "context": { "filename": "image.jpg", "stage": "compress" }
+    }
+  }
+  ```
+
+**And** error middleware should be registered last in `server.ts`
+**And** errors should never expose sensitive information in production
+**And** all error codes should be documented
+
+**Prerequisites:** Story 1.5 (Cloudinary removed)
+
+**Estimated Time:** 2 hours
+
+**Implementation Reference:** ARCHITECTURE_REFACTORING_GUIDE.md → Phase 2.1
 
 **Technical Notes:**
 
-- Use `winston` for logging or built-in `console` with structured format
-- Add request ID middleware (UUID per request)
-- Log all errors with context (user ID, request ID, endpoint)
-- Create error handling pattern for async routes
-- Add error monitoring setup (optional: Sentry integration placeholder)
+- Base `AppError` class extends `Error` with additional fields
+- Each error type has specific statusCode and operational flag
+- Error handler distinguishes operational vs programming errors
+- Use `Error.captureStackTrace()` for proper stack traces
+- Add `asyncHandler` wrapper to avoid try-catch boilerplate:
+  ```typescript
+  router.post(
+    '/process',
+    asyncHandler(async (req, res) => {
+      // Errors automatically caught and passed to error handler
+    })
+  );
+  ```
 
 ---
 
-### Story 1.7: Environment Configuration & Deployment Validation
+### Story 1.7: Retry Logic & Resilience
+
+**🔥 PHASE 2.2**
 
 **As a** developer,
-**I want** robust environment configuration and deployment validation,
-**So that** the app can deploy to Railway/Render/Fly.io with proper HTTPS.
+**I want** intelligent retry logic for OpenAI API calls,
+**So that** temporary failures don't cause entire batch processing to fail.
 
 **Acceptance Criteria:**
 
-**Given** the refactored architecture is in place
-**When** I configure environment and deployment settings
-**Then** the following should be implemented:
+**Given** OpenAI API calls can fail due to network issues or rate limits
+**When** I implement retry infrastructure
+**Then** the following should be created:
 
-- `.env.example` file documenting all required environment variables:
-  - `DATABASE_URL` (PostgreSQL connection string)
-  - `OPENAI_API_KEY`
-  - `JWT_SECRET`
-  - `BASE_URL` (for temp file URLs, e.g., `https://app.railway.app`)
-  - `NODE_ENV` (development, production)
-  - `PORT` (default: 3000)
-- Environment validation on server start (fail fast if missing required vars)
-- Configuration loader in `src/config/env.ts` with TypeScript types
-- Deployment documentation in `docs/deployment.md`:
-  - Railway setup steps
-  - Render setup steps
-  - Environment variable configuration
-  - Database migration commands
+- `src/utils/retry.ts` with `withRetry<T>()` function
+- Support for exponential backoff (configurable delays)
+- Retry options interface:
+  ```typescript
+  interface RetryOptions {
+    maxAttempts: number;
+    initialDelayMs: number;
+    maxDelayMs: number;
+    backoffMultiplier: number;
+    retryableErrors?: (error: any) => boolean;
+  }
+  ```
 
-**And** HTTPS should be enforced in production (redirect HTTP to HTTPS)
-**And** CORS should be configured for frontend (if separate domain)
-**And** health check endpoint should validate database connection
-**And** server should log configuration on startup (without sensitive values)
+**And** retry behavior should be:
 
-**Prerequisites:** Story 1.5 (database setup), Story 1.6 (error handling)
+- Default: 3 attempts with exponential backoff (1s, 2s, 4s)
+- Retry on: Network timeouts, 5xx errors, 429 rate limits
+- Do NOT retry on: 401 auth errors, 400 validation errors
+- Log each retry attempt with context
+
+**And** the function should be usable as:
+
+```typescript
+const metadata = await withRetry(() => metadataService.generateMetadata(tempUrl), {
+  maxAttempts: 3,
+  retryableErrors: err => err.status === 429,
+});
+```
+
+**And** after all retries exhausted, throw the last error
+**And** successful retries should be logged for monitoring
+
+**Prerequisites:** Story 1.6 (error architecture)
+
+**Estimated Time:** 1 hour
+
+**Implementation Reference:** ARCHITECTURE_REFACTORING_GUIDE.md → Phase 2.2
 
 **Technical Notes:**
 
-- Use `dotenv` for environment variables
-- Create validation function checking required vars on startup
-- Add TypeScript types for `process.env` (typed environment)
-- Configure Express trust proxy for HTTPS detection behind reverse proxy
-- Test deployment to Railway with Postgres add-on
-- Document local development setup vs production
+- Use `setTimeout` wrapped in Promise for delays
+- Implement exponential backoff: `delay = Math.min(delay * multiplier, maxDelay)`
+- Allow custom retry logic via `retryableErrors` callback
+- Log retry attempts with structured logging
+- Consider adding jitter to prevent thundering herd (optional)
+
+---
+
+### Story 1.8: Service Layer & Dependency Injection
+
+**🔥 PHASE 2.3 - Core Services**
+
+**As a** developer,
+**I want** service classes with dependency injection for all business logic,
+**So that** code is testable, maintainable, and loosely coupled.
+
+**Acceptance Criteria:**
+
+**Given** current code has tight coupling and no abstraction
+**When** I implement the service layer
+**Then** the following services should be created:
+
+- `src/models/metadata.model.ts`:
+  - `Metadata` interface (filename, title, keywords, category, releases)
+  - `ProcessingResult` interface (success, filename, metadata, error)
+
+- `src/services/metadata.service.ts`:
+  - `MetadataService` class with OpenAI client
+  - `generateMetadata(imageUrl: string): Promise<any>` method
+  - Wraps OpenAI API calls with error handling
+  - Throws `ExternalServiceError` on failures
+
+- `src/services/image-processing.service.ts`:
+  - `ImageProcessingService` class (depends on TempUrlService, MetadataService)
+  - `processImage(file: Express.Multer.File): Promise<ProcessingResult>`
+  - `processBatch(files: Express.Multer.File[]): Promise<ProcessingResult[]>`
+  - Implements retry logic for resilience
+  - Handles concurrency (5 parallel max)
+
+- `src/services/csv-export.service.ts`:
+  - `CsvExportService` class
+  - `generateCSV(metadataList: Metadata[], outputPath: string): Promise<void>`
+
+- `src/config/container.ts`:
+  - Dependency injection container
+  - Singleton instances of all services
+  - Export `services` object for easy access
+
+**And** services should use constructor injection for dependencies
+**And** all OpenAI logic should be moved from utilities to MetadataService
+**And** existing routes should be updated to use services
+**And** services should be easily mockable for testing
+
+**Prerequisites:** Story 1.7 (retry logic)
+
+**Estimated Time:** 4-5 hours
+
+**Implementation Reference:** ARCHITECTURE_REFACTORING_GUIDE.md → Phase 2.3
+
+**Technical Notes:**
+
+- Services are plain TypeScript classes with constructor DI
+- Container pattern for managing singleton instances
+- Update routes to use: `services.imageProcessing.processBatch(files)`
+- Move business logic out of route handlers (routes should be thin)
+- Refactor existing `src/openai.ts` into MetadataService
+- Use retry wrapper in ImageProcessingService for OpenAI calls
+
+---
+
+### Story 1.9: Structured Logging with Pino
+
+**🔥 PHASE 3.1 - Observability**
+
+**As a** developer,
+**I want** structured logging with Pino instead of console.log,
+**So that** logs are parseable, searchable, and production-ready.
+
+**Acceptance Criteria:**
+
+**Given** current logging uses console.log throughout
+**When** I implement structured logging
+**Then** the following should be created:
+
+- `src/utils/logger.ts` with Pino configuration:
+  - Development: Pretty-printed with colors
+  - Production: JSON format for log aggregation
+  - Log levels: debug, info, warn, error
+  - Automatic environment detection
+
+**And** logging should include context:
+
+```typescript
+logger.info({ filename: 'image.jpg', duration: 1234 }, 'Processing completed');
+// Output: {"level":"info","filename":"image.jpg","duration":1234,"msg":"Processing completed"}
+```
+
+**And** correlation ID middleware should be added:
+
+- `correlationIdMiddleware` generates UUID per request
+- Attaches `req.id` and `req.log` (child logger) to request
+- All logs within request include correlation ID
+
+**And** all `console.log` should be replaced with logger calls:
+
+- `console.log` → `logger.info`
+- `console.error` → `logger.error`
+- `console.warn` → `logger.warn`
+
+**And** sensitive data should never be logged (API keys, passwords)
+
+**Prerequisites:** Story 1.8 (service layer)
+
+**Estimated Time:** 2 hours
+
+**Implementation Reference:** ARCHITECTURE_REFACTORING_GUIDE.md → Phase 3.1
+
+**Technical Notes:**
+
+- Pino is already installed (Story 1.2 dependencies)
+- Configure pretty-print in development with `pino-pretty`
+- Use child loggers for correlation IDs
+- Update all files to import logger instead of console
+- Add redaction for sensitive fields (optional)
+
+---
+
+### Story 1.10: Metrics Collection with Prometheus
+
+**🔥 PHASE 3.2 - Observability**
+
+**As a** product owner,
+**I want** Prometheus metrics for processing performance and costs,
+**So that** we can monitor system health and optimize resource usage.
+
+**Acceptance Criteria:**
+
+**Given** the need to monitor application performance
+**When** I implement metrics collection
+**Then** the following should be created:
+
+- `src/utils/metrics.ts` with Prometheus client
+- Default Node.js metrics (CPU, memory, event loop)
+- Custom metrics:
+  - `asu_images_processed_total` (Counter, labeled by status: success/failure)
+  - `asu_processing_duration_seconds` (Histogram, labeled by stage)
+  - `asu_openai_cost_usd` (Counter, cumulative API cost)
+
+**And** metrics should be exposed:
+
+- `GET /metrics` endpoint returns Prometheus format
+- Content-Type: `text/plain`
+- Includes all collected metrics
+
+**And** metrics should be incremented in services:
+
+```typescript
+metrics.imagesProcessed.inc({ status: 'success' });
+metrics.processingDuration.observe({ stage: 'openai' }, duration);
+metrics.openaiCost.inc(0.002); // $0.002 per image
+```
+
+**And** metrics endpoint should be unprotected (for scraping)
+
+**Prerequisites:** Story 1.9 (structured logging)
+
+**Estimated Time:** 2 hours
+
+**Implementation Reference:** ARCHITECTURE_REFACTORING_GUIDE.md → Phase 3.2
+
+**Technical Notes:**
+
+```bash
+npm install prom-client
+```
+
+- Create registry with default metrics
+- Define custom metrics with appropriate types
+- Add metric increments in ImageProcessingService
+- Expose `/metrics` endpoint in server.ts
+- Document metric names and purposes
+
+---
+
+### Story 1.11: Health Checks & Readiness Probes
+
+**🔥 PHASE 3.3 - Observability**
+
+**As a** DevOps engineer,
+**I want** health check endpoints for liveness and readiness,
+**So that** container orchestrators can manage the application correctly.
+
+**Acceptance Criteria:**
+
+**Given** deployment to Railway/Render requires health checks
+**When** I implement health endpoints
+**Then** the following should be created:
+
+- `src/api/routes/health.routes.ts` with two endpoints:
+
+**1. Liveness probe: `GET /health`**
+
+- Returns 200 with: `{ "status": "ok", "timestamp": "..." }`
+- Always succeeds if server is running
+- Fast response (<50ms)
+
+**2. Readiness probe: `GET /health/ready`**
+
+- Checks critical dependencies:
+  - Configuration loaded (config.openai.apiKey exists)
+  - OpenAI API reachable (with timeout)
+  - Filesystem writable (temp directory)
+- Returns 200 if all checks pass
+- Returns 503 if any check fails
+- Response format:
+  ```json
+  {
+    "status": "ready",
+    "checks": {
+      "config": true,
+      "openai": true,
+      "filesystem": true
+    },
+    "timestamp": "2025-11-11T10:00:00Z"
+  }
+  ```
+
+**And** health routes should be registered in server.ts
+**And** readiness checks should timeout after 5 seconds
+**And** failed checks should log detailed errors
+
+**Prerequisites:** Story 1.10 (metrics)
+
+**Estimated Time:** 1 hour
+
+**Implementation Reference:** ARCHITECTURE_REFACTORING_GUIDE.md → Phase 3.3
+
+**Technical Notes:**
+
+- Import health routes in server.ts
+- Test OpenAI with `openai.models.list()` call
+- Test filesystem with temp file write/delete
+- Use Promise.race for timeout handling
+- Document endpoints for deployment platform
 
 ---
 
@@ -1690,11 +2067,11 @@ interface ImageMetadata {
 
 ## Epic Breakdown Summary
 
-**Total Stories:** 37 stories across 6 epics
+**Total Stories:** ~40 stories across 6 epics
 
 ### Story Count by Epic:
 
-1. **Epic 1 (Foundation):** 7 stories
+1. **Epic 1 (Foundation Refactoring):** 11 stories ⚡ **PRIORITY**
 2. **Epic 2 (Processing):** 6 stories
 3. **Epic 3 (AI Engine):** 5 stories
 4. **Epic 4 (CSV Export):** 3 stories
@@ -1703,35 +2080,66 @@ interface ImageMetadata {
 
 ### Estimated Timeline:
 
-- **Weeks 1-2:** Epic 1 (Foundation & Architecture)
-- **Week 3:** Epic 2 (Processing Pipeline) + Epic 3 (AI Engine)
-- **Week 4:** Epic 4 (CSV Export) + Epic 5 (UI/UX)
-- **Week 5:** Epic 6 (User Accounts)
-- **Week 6:** Integration testing, bug fixes, polish
+- **Days 1-5:** Epic 1 (Foundation Refactoring) - **START HERE FIRST** 🚨
+  - Phase 1: Configuration & Infrastructure (Days 1-2)
+  - Phase 2: Service Layer & Errors (Days 2-3)
+  - Phase 3: Observability (Days 4-5)
+- **Week 2:** Epic 2 (Processing Pipeline) + Epic 3 (AI Engine)
+- **Week 3:** Epic 4 (CSV Export) + Epic 5 (UI/UX)
+- **Week 4:** Epic 6 (User Accounts)
+- **Week 5:** Integration testing, bug fixes, polish
 
-**MVP Completion:** 6 weeks for full implementation
+**MVP Completion:** 5 weeks for full implementation
+
+**Critical Path:** Epic 1 MUST be completed before other epics begin.
 
 ---
 
 ## Implementation Sequence Recommendations
 
-### Phase 1: Foundation (Weeks 1-2)
+### 🚨 Phase 1: Foundation Refactoring (Days 1-5) - CRITICAL PATH
 
-**Goal:** Establish solid architectural foundation
+**Goal:** Transform prototype into production-ready architecture
 
 **Critical Path:**
 
-1. Story 1.1 → 1.2 → 1.3 (Architecture + Self-hosted URLs)
-2. Story 1.4 (Remove Cloudinary)
-3. Story 1.5 → 1.6 → 1.7 (Database + Infrastructure)
+**Days 1-2: Foundation & Infrastructure**
 
-**Deliverable:** Refactored codebase with modular structure, self-hosted architecture, database ready
+1. ✅ Story 1.1: Architecture Audit (COMPLETED)
+2. 🔥 Story 1.2: Configuration Service with Zod (2-3 hours)
+3. 🔥 Story 1.3: Directory Structure & TypeScript Paths (1 hour)
+4. 🔥 Story 1.4: Self-Hosted Temporary URL Service (2-3 hours)
+5. 🔥 Story 1.5: Remove Cloudinary Dependency (1 hour)
+
+**Days 2-3: Service Layer & Errors**
+
+6. 🔥 Story 1.6: Error Architecture & Typed Errors (2 hours)
+7. 🔥 Story 1.7: Retry Logic & Resilience (1 hour)
+8. 🔥 Story 1.8: Service Layer & Dependency Injection (4-5 hours)
+
+**Days 4-5: Observability**
+
+9. 🔥 Story 1.9: Structured Logging with Pino (2 hours)
+10. 🔥 Story 1.10: Metrics Collection with Prometheus (2 hours)
+11. 🔥 Story 1.11: Health Checks & Readiness Probes (1 hour)
+
+**Deliverable:** Production-ready codebase (8.5/10 quality) with:
+
+- ✅ Zero Cloudinary costs (save $0.01-0.02 per image)
+- ✅ 2-3x faster processing
+- ✅ Typed errors with visibility
+- ✅ Structured logging & metrics
+- ✅ Testable, maintainable architecture
+
+**Why This Must Be First:** All subsequent epics depend on this foundation. Without it, you'll build technical debt that becomes harder to fix later.
 
 ---
 
-### Phase 2: Core Processing (Week 3)
+### Phase 2: Core Processing (Week 2)
 
 **Goal:** Enable anonymous image processing with AI
+
+**Prerequisites:** Epic 1 COMPLETED ✅
 
 **Critical Path:**
 
@@ -1740,11 +2148,15 @@ interface ImageMetadata {
 
 **Deliverable:** Working end-to-end processing (upload → AI → results)
 
+**Note:** These stories now leverage the refactored service layer from Epic 1.
+
 ---
 
-### Phase 3: Export & UI (Week 4)
+### Phase 3: Export & UI (Week 3)
 
 **Goal:** Complete user workflow with beautiful interface
+
+**Prerequisites:** Epics 1-3 COMPLETED
 
 **Critical Path:**
 
@@ -1756,33 +2168,39 @@ interface ImageMetadata {
 
 ---
 
-### Phase 4: User Accounts (Week 5)
+### Phase 4: User Accounts (Week 4)
 
 **Goal:** Enable retention and monetization foundation
 
+**Prerequisites:** Epics 1-5 COMPLETED
+
+**Note:** Database setup (previously Story 1.5) should be done at the start of this phase.
+
 **Critical Path:**
 
-1. Stories 6.1 → 6.2 → 6.3 (Auth System)
-2. Stories 6.4 → 6.5 (Usage Tracking + History)
-3. Stories 6.6 → 6.7 (Settings + Upsell)
+1. Database Setup (PostgreSQL with Prisma)
+2. Stories 6.1 → 6.2 → 6.3 (Auth System)
+3. Stories 6.4 → 6.5 (Usage Tracking + History)
+4. Stories 6.6 → 6.7 (Settings + Upsell)
 
 **Deliverable:** Complete free tier with accounts
 
 ---
 
-### Phase 5: Testing & Polish (Week 6)
+### Phase 5: Testing & Polish (Week 5)
 
 **Goal:** Production-ready quality
 
 **Activities:**
 
 - Integration testing across all epics
-- Performance optimization
-- Security audit
-- User acceptance testing
+- Performance optimization (validate 2-3x speedup from Epic 1)
+- Security audit (error messages, API keys, HTTPS)
+- User acceptance testing with real photographers
 - Bug fixes and edge cases
-- Documentation finalization
-- Deployment to production
+- Documentation finalization (deployment, API docs)
+- Deployment to Railway/Render production
+- Monitoring setup (Prometheus metrics)
 
 **Deliverable:** Launch-ready MVP
 
@@ -1790,41 +2208,54 @@ interface ImageMetadata {
 
 ## Next Steps
 
-### For Architecture & Development:
+### 🚨 START HERE: Epic 1 Development (HIGHEST PRIORITY)
 
-1. **Run architecture workflow:**
+**Epic 1 is the critical path. All other epics depend on it. Start immediately.**
 
-   ```
-   @architect.mdc *architecture
-   ```
-
-   - Review current codebase structure
-   - Create detailed refactoring plan
-   - Design database schema
-   - Plan deployment architecture
-
-2. **Start Epic 1 development:**
+1. **Review the refactoring guide:**
 
    ```
-   @dev.mdc *dev-story epic=1 story=1
+   Read: docs/ARCHITECTURE_REFACTORING_GUIDE.md
    ```
 
-   - Begin with Story 1.1 (Architecture Audit)
-   - Follow with Story 1.2 (Directory Structure)
-   - Continue sequentially through Epic 1
+   - Complete implementation details for all 11 stories
+   - Code examples for each phase
+   - Expected outcomes and metrics
 
-3. **For each story:**
+2. **Start Epic 1, Story 1.2 (Configuration Service):**
+
+   ```
+   @dev.mdc *dev-story epic=1 story=2
+   ```
+
+   - Story 1.1 is already ✅ COMPLETED (Architecture Audit)
+   - Begin with Story 1.2: Configuration Service with Zod
+   - Follow sequentially through Epic 1 (Stories 1.2 → 1.11)
+   - Estimated: 4-5 development days total
+
+3. **For each story, validate readiness:**
+
    ```
    @dev.mdc *story-ready epic=1 story=N
    ```
 
-   - Validate story is ready for implementation
    - Ensure all prerequisites completed
-   - Clarify any ambiguities
+   - Review acceptance criteria
+   - Check implementation reference in ARCHITECTURE_REFACTORING_GUIDE.md
+
+4. **Track progress with git commits:**
+   - Use format: `ASU-Story-1.2-Configuration-Service-with-Zod`
+   - Commit after each story completion
+   - Test thoroughly before moving to next story
+
+### For Architecture & Database (DO LATER - Week 4):
+
+Database setup (previously Story 1.5) has been deferred to Epic 6 (User Accounts). Focus on Epic 1 refactoring first.
 
 ### For UX Design:
 
 1. **Run UX design workflow:**
+
    ```
    @ux-designer.mdc *create-ux-design
    ```
@@ -1837,6 +2268,7 @@ interface ImageMetadata {
 ### For Testing:
 
 1. **Run test planning workflow:**
+
    ```
    @tea.mdc *epic-test-context epic=1
    ```
