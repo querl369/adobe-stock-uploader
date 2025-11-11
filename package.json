@@ -10,7 +10,7 @@
     "test:coverage": "vitest run --coverage",
     "dev": "concurrently \"npm run dev:client\" \"npm run dev:server\"",
     "dev:client": "vite",
-    "dev:server": "ts-node server.ts",
+    "dev:server": "ts-node -r tsconfig-paths/register server.ts",
     "build": "vite build",
     "start": "npm run build && ts-node server.ts",
     "preview": "vite preview",
@@ -66,6 +66,7 @@
     "lint-staged": "^16.2.6",
     "prettier": "^3.6.2",
     "supertest": "^7.1.4",
+    "tsconfig-paths": "^4.2.0",
     "vitest": "^4.0.8"
   }
 }
