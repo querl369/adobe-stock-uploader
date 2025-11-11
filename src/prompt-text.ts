@@ -1,5 +1,4 @@
-export const PROMPT_TEXT = 
-`Generate metadata for this image for Adobe Stock by following these guidelines: 
+export const PROMPT_TEXT = `Generate metadata for this image for Adobe Stock by following these guidelines: 
 Title: This should be a simple description of the image that's 70 characters or fewer. Don't include commas.
 Keywords: Put keywords in order of relevance and separate them by commas. Include a maximum of 25 keywords, and don't include technical data.
 Category: Enter the number of the category that most accurately describes the image.
@@ -25,6 +24,5 @@ Here are all available categories:
 19. Technology: Computers, smartphones, virtual reality, and other tools designed to increase productivity.
 20. Transport: Different types of transportation, including cars, buses, trains, planes, and highway systems.
 21. Travel: Local and worldwide travel, culture, and lifestyles.
-It is Easter preparation image, provide category accordingly.
 Please chose the category that best describes the image insert the number of the category.
-Please return response in JSON format with structure: { "title": "some title", "keywords": "some keywords", "category": "some category" }`
+Please return response in JSON format with structure: { "title": "some title", "keywords": "some keywords", "category": "some category" }`;

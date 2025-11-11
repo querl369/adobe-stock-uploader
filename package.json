@@ -45,6 +45,8 @@
     "lucide-react": "^0.553.0",
     "multer": "^2.0.0-rc.4",
     "openai": "^6.8.1",
+    "pino": "^10.1.0",
+    "pino-pretty": "^13.1.2",
     "react": "^19.2.0",
     "react-dnd": "^16.0.1",
     "react-dnd-html5-backend": "^16.0.1",
@@ -53,7 +55,8 @@
     "tailwind-merge": "^3.3.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.2",
-    "vite": "^7.2.2"
+    "vite": "^7.2.2",
+    "zod": "^4.1.12"
   },
   "devDependencies": {
     "@types/supertest": "^6.0.3",

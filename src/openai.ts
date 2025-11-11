@@ -1,19 +1,16 @@
 import OpenAI from 'openai';
-import dotenv from 'dotenv';
-
+import { config } from './config/app.config';
 import { PROMPT_TEXT } from './prompt-text';
 
-dotenv.config();
-
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: config.openai.apiKey,
 });
 
 export async function generateMetadata(imageUrl: string): Promise<any> {
   try {
     // Using Chat Completions API with GPT-5-mini (supports vision)
     const response = await openai.chat.completions.create({
-      model: 'gpt-5-mini', // GPT-5 mini model with vision capabilities
+      model: config.openai.model,
       messages: [
         {
           role: 'user',
@@ -32,7 +29,8 @@ export async function generateMetadata(imageUrl: string): Promise<any> {
           ],
         },
       ],
-      max_completion_tokens: 1000,
+      max_completion_tokens: config.openai.maxTokens,
+      temperature: config.openai.temperature,
     });
 
     // Extract the JSON from the response

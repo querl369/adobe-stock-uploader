@@ -5,10 +5,9 @@ import express, { Request, Response } from 'express';
 import multer, { StorageEngine } from 'multer';
 import path from 'path';
 import fs from 'fs';
-import dotenv from 'dotenv';
 
-// Load environment variables
-dotenv.config();
+// Import config service (validates environment variables on startup)
+import { config } from './src/config/app.config';
 
 // Import your existing backend functions (they work as-is!)
 // Note: Using require here because your src files are CommonJS
@@ -50,7 +49,7 @@ interface MetadataItem {
 // ============================================
 
 const app = express();
-const PORT = 3000;
+const PORT = config.server.port;
 
 // Middleware - allows receiving JSON data and serving static files
 app.use(express.json());
@@ -68,7 +67,7 @@ const storage: StorageEngine = multer.diskStorage({
 
 const upload = multer({
   storage: storage,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
+  limits: { fileSize: config.processing.maxFileSizeMB * 1024 * 1024 }, // Configurable MB limit
 });
 
 // Ensure directories exist
@@ -189,11 +188,14 @@ app.post('/api/process-batch', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'No files uploaded yet. Please upload images first.' });
     }
 
-    const uploadedFiles = fs.readdirSync('uploads').filter(file => 
-      file.match(/\.(jpg|jpeg|png|gif|webp)$/i)
-    );
+    const uploadedFiles = fs
+      .readdirSync('uploads')
+      .filter(file => file.match(/\.(jpg|jpeg|png|gif|webp)$/i));
 
-    console.log(`   Found ${uploadedFiles.length} files in uploads:`, uploadedFiles.map(f => f.substring(0, 30) + '...'));
+    console.log(
+      `   Found ${uploadedFiles.length} files in uploads:`,
+      uploadedFiles.map(f => f.substring(0, 30) + '...')
+    );
 
     if (uploadedFiles.length === 0) {
       return res.status(400).json({ error: 'No image files found in uploads directory' });
@@ -282,10 +284,10 @@ app.post('/api/process-batch', async (req: Request, res: Response) => {
     }
     console.log('🧹 Cleaned uploads directory');
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       metadataList,
-      csvFileName 
+      csvFileName,
     });
   } catch (error) {
     console.error('Batch processing error:', error);
@@ -313,7 +315,7 @@ app.post('/api/export-csv', async (req: Request, res: Response) => {
     console.log(`📥 Downloading CSV: ${csvFileName}`);
 
     // Send the CSV file as download
-    res.download(csvPath, csvFileName, (err) => {
+    res.download(csvPath, csvFileName, err => {
       if (err) {
         console.error('Error downloading CSV:', err);
       }

@@ -16,7 +16,34 @@ vi.mock('openai', () => ({
 
 // Mock dotenv
 vi.mock('dotenv', () => ({
-  default: { config: vi.fn() },
+  config: vi.fn(),
+}));
+
+// Mock config service
+vi.mock('../src/config/app.config', () => ({
+  config: {
+    openai: {
+      apiKey: 'test-api-key',
+      model: 'gpt-5-mini',
+      maxTokens: 1000,
+      temperature: 0.3,
+    },
+    server: {
+      port: 3000,
+      baseUrl: 'http://localhost:3000',
+      isProduction: false,
+      nodeEnv: 'test',
+    },
+    processing: {
+      concurrencyLimit: 5,
+      maxFileSizeMB: 50,
+      tempFileLifetime: 10,
+    },
+    rateLimits: {
+      anonymous: 10,
+      freeTier: 100,
+    },
+  },
 }));
 
 describe('openai', () => {
