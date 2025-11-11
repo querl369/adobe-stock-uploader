@@ -203,12 +203,12 @@ export class TempUrlService {
    * Starts background cleanup job (every 30 seconds)
    */
   private startBackgroundCleanup(): void {
-    // Run immediately on startup
-    this.cleanupOldFiles();
+    // Run immediately on startup (fire-and-forget)
+    this.cleanupOldFiles().catch(err => console.error('Background cleanup error:', err));
 
     // Then run every 30 seconds
     this.cleanupIntervalId = setInterval(() => {
-      this.cleanupOldFiles();
+      this.cleanupOldFiles().catch(err => console.error('Background cleanup error:', err));
     }, 30 * 1000);
   }
 

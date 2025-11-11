@@ -45,7 +45,7 @@ development_status:
   1-2-configuration-service-and-environment-setup: done
   1-3-directory-structure-and-typescript-path-aliases: done
   1-4-self-hosted-temporary-url-service: done
-  1-5-remove-cloudinary-dependency: review
+  1-5-remove-cloudinary-dependency: done
   1-6-error-architecture-and-typed-errors: backlog
   1-7-retry-logic-and-resilience: backlog
   1-8-service-layer-and-dependency-injection: backlog

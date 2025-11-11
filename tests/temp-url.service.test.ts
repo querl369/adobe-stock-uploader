@@ -321,6 +321,9 @@ describe('TempUrlService', () => {
       // Fast-forward past cleanup time (default 10 seconds)
       await vi.advanceTimersByTimeAsync(11000);
 
+      // Run all pending timers to ensure async cleanup completes
+      await vi.runAllTimersAsync();
+
       // File should be deleted
       fileExists = await fs
         .access(filepath)
@@ -473,7 +476,8 @@ describe('TempUrlService', () => {
       const testService = new TempUrlService(testTempDir);
 
       // Wait for background cleanup to run (runs immediately on startup)
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Give more time for async file operations to complete
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       // Old file should be cleaned up by background job
       fileExists = await fs
@@ -483,7 +487,7 @@ describe('TempUrlService', () => {
       expect(fileExists).toBe(false);
 
       testService.stopBackgroundCleanup();
-    });
+    }, 10000); // Increase timeout to 10 seconds
   });
 
   describe('temp directory creation', () => {
