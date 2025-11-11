@@ -37,7 +37,6 @@
     "@types/node": "^22.13.11",
     "@vitejs/plugin-react-swc": "^4.2.1",
     "class-variance-authority": "^0.7.1",
-    "cloudinary": "^2.8.0",
     "clsx": "^2.1.1",
     "csv-writer": "^1.6.0",
     "dotenv": "^16.4.7",

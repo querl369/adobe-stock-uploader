@@ -57,6 +57,141 @@ describe('TempUrlService', () => {
     }
   });
 
+  describe('createTempUrlFromPath', () => {
+    it('should create temp URL from disk file path', async () => {
+      const sharp = require('sharp');
+
+      // Create a test image file on disk
+      const testImagePath = path.join(testTempDir, 'source-test.png');
+      await sharp({
+        create: {
+          width: 100,
+          height: 100,
+          channels: 3,
+          background: { r: 255, g: 0, b: 0 },
+        },
+      })
+        .png()
+        .toFile(testImagePath);
+
+      const url = await service.createTempUrlFromPath(testImagePath);
+
+      // Verify URL format
+      expect(url).toMatch(/^http:\/\/localhost:3000\/temp\/[a-f0-9-]{36}\.jpg$/);
+
+      // Extract UUID from URL
+      const uuid = url.split('/').pop()?.replace('.jpg', '');
+      expect(uuid).toBeTruthy();
+
+      // Verify compressed file exists
+      const outputPath = path.join(testTempDir, `${uuid}.jpg`);
+      const fileExists = await fs
+        .access(outputPath)
+        .then(() => true)
+        .catch(() => false);
+      expect(fileExists).toBe(true);
+
+      // Verify file is JPEG
+      const fileBuffer = await fs.readFile(outputPath);
+      expect(fileBuffer[0]).toBe(0xff); // JPEG magic number
+      expect(fileBuffer[1]).toBe(0xd8);
+
+      // Cleanup test image
+      await fs.unlink(testImagePath);
+    });
+
+    it('should compress large images from disk to max 1024px', async () => {
+      const sharp = require('sharp');
+
+      // Create a large test image file
+      const testImagePath = path.join(testTempDir, 'large-source.png');
+      await sharp({
+        create: {
+          width: 2000,
+          height: 2000,
+          channels: 3,
+          background: { r: 0, g: 255, b: 0 },
+        },
+      })
+        .png()
+        .toFile(testImagePath);
+
+      const url = await service.createTempUrlFromPath(testImagePath);
+      const uuid = url.split('/').pop()?.replace('.jpg', '');
+      const outputPath = path.join(testTempDir, `${uuid}.jpg`);
+
+      const metadata = await sharp(outputPath).metadata();
+
+      // Should be resized to max 1024px
+      expect(metadata.width).toBeLessThanOrEqual(1024);
+      expect(metadata.height).toBeLessThanOrEqual(1024);
+
+      // Cleanup
+      await fs.unlink(testImagePath);
+    });
+
+    it('should handle non-existent file path gracefully', async () => {
+      const nonExistentPath = path.join(testTempDir, 'does-not-exist.jpg');
+
+      await expect(service.createTempUrlFromPath(nonExistentPath)).rejects.toThrow(
+        'Failed to create temp URL from path'
+      );
+    });
+
+    it('should handle corrupted image file gracefully', async () => {
+      const corruptedPath = path.join(testTempDir, 'corrupted.jpg');
+      await fs.writeFile(corruptedPath, 'This is not an image');
+
+      await expect(service.createTempUrlFromPath(corruptedPath)).rejects.toThrow(
+        'Failed to create temp URL from path'
+      );
+
+      // Cleanup
+      await fs.unlink(corruptedPath);
+    });
+
+    it('should schedule cleanup for files created from path', async () => {
+      vi.useFakeTimers();
+      const sharp = require('sharp');
+
+      const testImagePath = path.join(testTempDir, 'cleanup-test.png');
+      await sharp({
+        create: {
+          width: 50,
+          height: 50,
+          channels: 3,
+          background: { r: 0, g: 0, b: 255 },
+        },
+      })
+        .png()
+        .toFile(testImagePath);
+
+      const url = await service.createTempUrlFromPath(testImagePath);
+      const uuid = url.split('/').pop()?.replace('.jpg', '');
+      const outputPath = path.join(testTempDir, `${uuid}.jpg`);
+
+      // File should exist initially
+      let fileExists = await fs
+        .access(outputPath)
+        .then(() => true)
+        .catch(() => false);
+      expect(fileExists).toBe(true);
+
+      // Fast-forward past cleanup time (10 seconds)
+      await vi.advanceTimersByTimeAsync(11000);
+
+      // File should be deleted
+      fileExists = await fs
+        .access(outputPath)
+        .then(() => true)
+        .catch(() => false);
+      expect(fileExists).toBe(false);
+
+      vi.useRealTimers();
+      await fs.unlink(testImagePath);
+    });
+  });
+
   describe('createTempUrl', () => {
     it('should create a compressed JPEG image with UUID filename', async () => {
       // Create a simple test image buffer (1x1 red pixel PNG)

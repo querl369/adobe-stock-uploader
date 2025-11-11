@@ -9,9 +9,11 @@ import fs from 'fs';
 // Import config service (validates environment variables on startup)
 import { config } from './src/config/app.config';
 
+// Import services
+import { tempUrlService } from './src/services/temp-url.service';
+
 // Import your existing backend functions (they work as-is!)
 // Note: Using require here because your src files are CommonJS
-const { uploadImage, deleteImage } = require('./src/cloudinary');
 const { generateMetadata } = require('./src/openai');
 const { renameImages } = require('./src/files-manipulation');
 const { writeMetadataToCSV } = require('./src/csv-writer');
@@ -109,7 +111,7 @@ app.post('/api/upload', upload.single('image'), async (req: Request, res: Respon
 });
 
 // Endpoint: Process a single image
-// Uploads to Cloudinary, generates metadata with OpenAI, then cleans up
+// Creates temp URL, generates metadata with OpenAI, cleanup is automatic
 app.post('/api/process-image', async (req: Request, res: Response) => {
   try {
     const { fileId, filename } = req.body;
@@ -122,16 +124,15 @@ app.post('/api/process-image', async (req: Request, res: Response) => {
 
     console.log(`Processing ${filename}...`);
 
-    // Upload to Cloudinary (temporary)
-    const { url, publicId } = await uploadImage(filePath);
-    console.log(`Uploaded ${filename} to Cloudinary`);
+    // Create temporary URL (self-hosted, replaces Cloudinary)
+    const url = await tempUrlService.createTempUrlFromPath(filePath);
+    console.log(`Created temp URL for ${filename}`);
 
     // Generate metadata using OpenAI
     const metadata = await generateMetadata(url);
     console.log(`Generated metadata for ${filename}`);
 
-    // Delete from Cloudinary (we don't need it anymore)
-    await deleteImage(publicId);
+    // Note: Cleanup is automatic via TempUrlService scheduled cleanup
 
     // Send back the results
     const result: ProcessResult = {
@@ -228,19 +229,15 @@ app.post('/api/process-batch', async (req: Request, res: Response) => {
       try {
         console.log(`[${i + 1}/${renamedFiles.length}] Processing ${file}...`);
 
-        // Upload to Cloudinary
-        const { url, publicId } = await uploadImage(filePath);
-        console.log(`✅ Uploaded to Cloudinary: ${url}`);
-
-        // Wait a moment for Cloudinary to process the image
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Create temporary URL (self-hosted, replaces Cloudinary)
+        const url = await tempUrlService.createTempUrlFromPath(filePath);
+        console.log(`✅ Created temp URL: ${url}`);
 
         // Generate metadata
         const metadata = await generateMetadata(url);
         console.log(`✅ Generated metadata for ${file}`);
 
-        // Delete from Cloudinary
-        await deleteImage(publicId);
+        // Note: Cleanup is automatic via TempUrlService scheduled cleanup
 
         metadataList.push({
           fileName: file,

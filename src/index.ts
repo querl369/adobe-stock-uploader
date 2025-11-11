@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { uploadImage, deleteImage } from './cloudinary';
+import { tempUrlService } from './services/temp-url.service';
 import { generateMetadata } from './openai';
 import { renameImages, convertPngToJpeg } from './files-manipulation';
 
@@ -30,14 +30,13 @@ async function processImages(imageDir: string, outputCsvPath: string, initials: 
         try {
           console.log(`Processing ${file}...`);
           const filePath = path.join(imageDir, file);
-          const { url, publicId } = await uploadImage(filePath);
-          console.log(`Uploaded ${file} to ${url}`);
+          const url = await tempUrlService.createTempUrlFromPath(filePath);
+          console.log(`Created temp URL for ${file}: ${url}`);
 
           const metadata = await generateMetadata(url);
           console.log(`Generated metadata for ${file}`);
 
-          // Delete uploaded image from Cloudinary
-          await deleteImage(publicId);
+          // Note: Cleanup is automatic via TempUrlService
 
           return {
             filename: file,

@@ -80,6 +80,48 @@ export class TempUrlService {
   }
 
   /**
+   * Creates a temporary URL from a file path (disk storage)
+   *
+   * @param filePath - Absolute or relative path to the image file
+   * @returns Public HTTPS URL to the compressed image
+   *
+   * This method is used when files are stored on disk (multer.diskStorage)
+   * instead of in memory (multer.memoryStorage)
+   */
+  async createTempUrlFromPath(filePath: string): Promise<string> {
+    const uuid = randomUUID();
+    const filename = `${uuid}.jpg`;
+    const outputPath = path.join(this.tempDir, filename);
+
+    try {
+      // Compress image with Sharp (Sharp can read directly from file path)
+      await sharp(filePath)
+        .resize(1024, 1024, {
+          fit: 'inside',
+          withoutEnlargement: true,
+        })
+        .jpeg({
+          quality: 85,
+          progressive: true,
+        })
+        .toFile(outputPath);
+
+      // Schedule cleanup after configured lifetime
+      this.scheduleCleanup(uuid, this.lifetime);
+
+      // Return public URL
+      const url = `${this.baseUrl}/temp/${filename}`;
+      return url;
+    } catch (error) {
+      // Clean up partial file if compression fails
+      await this.cleanup(uuid).catch(() => {});
+      throw new Error(
+        `Failed to create temp URL from path: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }
+
+  /**
    * Manually cleanup a specific temp file by UUID
    *
    * @param uuid - File UUID (without extension)
