@@ -55,6 +55,8 @@ const PORT = config.server.port;
 app.use(express.json());
 // Serve static files from Vite build
 app.use(express.static('dist'));
+// Serve temporary image files (for OpenAI Vision API access)
+app.use('/temp', express.static(path.join(process.cwd(), 'temp')));
 
 // Configure file upload - saves uploaded images temporarily
 const storage: StorageEngine = multer.diskStorage({
@@ -71,7 +73,7 @@ const upload = multer({
 });
 
 // Ensure directories exist
-['uploads', 'images', 'csv_output'].forEach(dir => {
+['uploads', 'images', 'csv_output', 'temp'].forEach(dir => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
