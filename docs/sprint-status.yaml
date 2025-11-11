@@ -1,0 +1,104 @@
+# Sprint Status Tracking
+# This file tracks development progress through Epic 1-6
+
+# generated: 2025-11-11
+# project: adobe-stock-uploader
+# project_key: adobe-stock-uploader
+# tracking_system: file-system
+# story_location: "{project-root}/docs/stories"
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic exists in epic file but not contexted
+#   - contexted: Epic tech context created (required before drafting stories)
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - drafted: Story file created in stories folder
+#   - ready-for-dev: Draft approved and story context created
+#   - in-progress: Developer actively working on implementation
+#   - review: Under SM review (via code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - completed: Retrospective has been done
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epics should be 'contexted' before stories can be 'drafted'
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically drafts next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', SM reviews, then Dev moves to 'done'
+
+generated: 2025-11-11
+project: adobe-stock-uploader
+project_key: adobe-stock-uploader
+tracking_system: file-system
+story_location: "{project-root}/docs/stories"
+
+development_status:
+  # Epic 1: Architecture Review & Foundation Refactoring
+  epic-1: contexted
+  1-1-architecture-audit-and-refactoring-plan: done
+  1-2-configuration-service-and-environment-setup: done
+  1-3-directory-structure-and-typescript-path-aliases: done
+  1-4-self-hosted-temporary-url-service: backlog
+  1-5-remove-cloudinary-dependency: backlog
+  1-6-error-architecture-and-typed-errors: backlog
+  1-7-retry-logic-and-resilience: backlog
+  1-8-service-layer-and-dependency-injection: backlog
+  1-9-structured-logging-with-pino: backlog
+  1-10-metrics-collection-with-prometheus: backlog
+  1-11-health-checks-and-readiness-probes: backlog
+  epic-1-retrospective: optional
+
+  # Epic 2: Anonymous Image Processing Pipeline
+  epic-2: backlog
+  2-1-batch-upload-api-endpoint: backlog
+  2-2-cookie-based-anonymous-session-tracking: backlog
+  2-3-rate-limiting-middleware: backlog
+  2-4-image-compression-service: backlog
+  2-5-parallel-processing-orchestration: backlog
+  2-6-processing-status-and-progress-tracking: backlog
+  epic-2-retrospective: optional
+
+  # Epic 3: AI Metadata Generation Engine
+  epic-3: backlog
+  3-1-openai-vision-api-integration: backlog
+  3-2-adobe-stock-category-taxonomy: backlog
+  3-3-optimized-ai-prompt-engineering: backlog
+  3-4-metadata-validation-and-quality-checks: backlog
+  3-5-error-recovery-and-retry-logic: backlog
+  epic-3-retrospective: optional
+
+  # Epic 4: CSV Export & Download
+  epic-4: backlog
+  4-1-csv-generation-service: backlog
+  4-2-instant-download-endpoint: backlog
+  4-3-batch-history-persistence: backlog
+  epic-4-retrospective: optional
+
+  # Epic 5: User Interface & Experience
+  epic-5: backlog
+  5-1-landing-page-and-hero-section: backlog
+  5-2-drag-and-drop-upload-interface: backlog
+  5-3-processing-progress-visualization: backlog
+  5-4-success-screen-and-download: backlog
+  5-5-dark-mode-theme-and-visual-polish: backlog
+  5-6-responsive-design-and-mobile-optimization: backlog
+  5-7-error-states-and-user-feedback: backlog
+  epic-5-retrospective: optional
+
+  # Epic 6: User Account System
+  epic-6: backlog
+  6-1-user-registration-and-signup-flow: backlog
+  6-2-user-login-and-authentication: backlog
+  6-3-jwt-based-authentication-middleware: backlog
+  6-4-monthly-usage-tracking-and-quota-enforcement: backlog
+  6-5-processing-history-and-csv-re-download: backlog
+  6-6-account-settings-and-profile-management: backlog
+  6-7-upgrade-prompt-and-upsell-flow: backlog
+  epic-6-retrospective: optional
+
