@@ -19,7 +19,7 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
-import { AppError, isAppError, isOperationalError, RateLimitError } from '../../models/errors';
+import { AppError, isAppError, RateLimitError } from '../../models/errors';
 
 /**
  * Main error handling middleware
@@ -31,8 +31,8 @@ export function errorHandler(
   err: Error | AppError,
   req: Request,
   res: Response,
-  next: NextFunction
-): void {
+  _next: NextFunction
+) {
   // Log error for debugging (always log to console for now)
   console.error('❌ Error caught by error handler:', {
     name: err.name,
@@ -133,7 +133,7 @@ export function asyncHandler(
  *   app.use(notFoundHandler);
  *   app.use(errorHandler);
  */
-export function notFoundHandler(req: Request, res: Response, next: NextFunction): void {
+export function notFoundHandler(req: Request, res: Response, _next: NextFunction) {
   res.status(404).json({
     success: false,
     error: {
