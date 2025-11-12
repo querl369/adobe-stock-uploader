@@ -12,6 +12,9 @@ import { config } from './src/config/app.config';
 // Import services
 import { tempUrlService } from './src/services/temp-url.service';
 
+// Import error handling middleware
+import { errorHandler, notFoundHandler } from './src/api/middleware/error-handler';
+
 // Import your existing backend functions (they work as-is!)
 // Note: Using require here because your src files are CommonJS
 const { generateMetadata } = require('./src/openai');
@@ -362,6 +365,16 @@ app.get('*', (req: Request, res: Response) => {
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));
   }
 });
+
+// ============================================
+// Error Handling Middleware (MUST be last)
+// ============================================
+
+// Handle 404 errors for undefined routes
+app.use(notFoundHandler);
+
+// Handle all other errors
+app.use(errorHandler);
 
 // ============================================
 // Start the Server

@@ -1,86 +1,86 @@
 # API Middleware
 
-## Purpose
+This directory contains Express middleware functions for request processing, error handling, and cross-cutting concerns.
 
-This directory contains Express middleware functions for cross-cutting concerns that run before route handlers, including authentication, validation, error handling, and request processing.
+## Files
 
-## Patterns & Best Practices
+### `error-handler.ts`
 
-### Middleware Types
+Centralized error handling middleware that provides:
 
-1. **Authentication/Authorization**: Verify user identity and permissions
-2. **Validation**: Check request format and data integrity
-3. **Error Handling**: Catch and format errors consistently
-4. **Logging**: Track requests and responses
-5. **Rate Limiting**: Prevent abuse
-6. **Request Processing**: Parse, transform, or enrich requests
+- **Consistent error responses** - All errors follow the same JSON structure
+- **Security** - Sensitive information is never exposed in production
+- **Typed errors** - Works with custom AppError classes for different scenarios
+- **Async support** - `asyncHandler` wrapper eliminates try-catch boilerplate
 
-### Example Structure
+#### Usage
 
 ```typescript
-import { Request, Response, NextFunction } from 'express';
-import { AppError } from '@models/errors';
+// In route handlers:
+import { asyncHandler } from '@api/middleware/error-handler';
+import { ValidationError } from '@models/errors';
 
-export function exampleMiddleware(req: Request, res: Response, next: NextFunction) {
-  try {
-    // Perform middleware logic
-    // Modify req, res as needed
+app.post(
+  '/api/process',
+  asyncHandler(async (req, res) => {
+    // Errors automatically caught and passed to error handler
+    if (!req.body.filename) {
+      throw new ValidationError('Filename is required');
+    }
 
-    // Pass control to next middleware/handler
-    next();
-  } catch (error) {
-    // Pass errors to error handler
-    next(error);
+    const result = await processImage(req.body);
+    res.json(result);
+  })
+);
+
+// In server.ts (MUST be registered last):
+import { errorHandler, notFoundHandler } from '@api/middleware/error-handler';
+
+// ... all routes here ...
+
+app.use(notFoundHandler); // Handle 404s
+app.use(errorHandler); // Handle all other errors
+```
+
+#### Error Response Format
+
+All errors return this structure:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "User-friendly error message",
+    "context": {
+      "additionalInfo": "Optional debugging context"
+    }
   }
 }
 ```
 
-### Async Handler Pattern
+#### HTTP Status Codes
 
-```typescript
-export const asyncHandler = (fn: Function) => (req: Request, res: Response, next: NextFunction) => {
-  Promise.resolve(fn(req, res, next)).catch(next);
-};
-```
+- `400` - ValidationError (bad request)
+- `401` - AuthenticationError (unauthorized)
+- `404` - NotFoundError (not found)
+- `429` - RateLimitError (too many requests)
+- `500` - ProcessingError (internal server error)
+- `502` - ExternalServiceError (bad gateway)
 
-### Error Handler Pattern
+## Future Middleware
 
-```typescript
-export function errorHandler(err: Error, req: Request, res: Response, next: NextFunction) {
-  // Log error
-  // Format response
-  // Send appropriate status code
-}
-```
+As the application grows, this directory will contain:
 
-### Guidelines
+- **Authentication middleware** (`auth.middleware.ts`) - JWT validation
+- **Rate limiting middleware** (`rate-limit.middleware.ts`) - Request throttling
+- **Validation middleware** (`validation.middleware.ts`) - Request body validation
+- **Logging middleware** (`logging.middleware.ts`) - Request/response logging
+- **CORS middleware** (`cors.middleware.ts`) - Cross-origin resource sharing
 
-- **Single responsibility**: Each middleware does one thing well
-- **Call next()**: Always call next() to continue the chain
-- **Error handling**: Use next(error) to pass errors
-- **Type safety**: Use proper Express types
-- **Reusability**: Make middleware composable and reusable
-- **Order matters**: Register middleware in correct order in server.ts
+## Design Patterns
 
-### Common Middleware
-
-- `auth.middleware.ts` - JWT authentication
-- `validation.middleware.ts` - Request validation with Zod
-- `error-handler.ts` - Centralized error handling
-- `rate-limit.middleware.ts` - Rate limiting logic
-- `async-handler.ts` - Async error wrapper
-- `logger.middleware.ts` - Request/response logging
-
-### Importing
-
-```typescript
-import { authMiddleware } from '@api/middleware/auth.middleware';
-import { validateRequest } from '@api/middleware/validation.middleware';
-```
-
-### Testing
-
-- Test middleware in isolation
-- Mock req, res, next objects
-- Verify next() is called appropriately
-- Test error scenarios
+- **Thin middleware** - Single responsibility, composable
+- **Fail fast** - Validate early, throw meaningful errors
+- **Immutable requests** - Don't modify req/res unless necessary
+- **Type safety** - Use TypeScript interfaces for middleware contracts
