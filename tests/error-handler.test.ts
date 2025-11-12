@@ -14,7 +14,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Request, Response, NextFunction } from 'express';
 import { errorHandler, asyncHandler, notFoundHandler } from '../src/api/middleware/error-handler';
 import {
-  AppError,
   ValidationError,
   ProcessingError,
   ExternalServiceError,
@@ -29,10 +28,10 @@ beforeEach(() => {
 });
 
 // Helper to create mock Express request/response/next
-function createMocks() {
+function createMocks(path = '/api/test', method = 'POST') {
   const req = {
-    path: '/api/test',
-    method: 'POST',
+    path,
+    method,
   } as Request;
 
   const res = {
@@ -396,9 +395,7 @@ describe('asyncHandler', () => {
 
 describe('notFoundHandler', () => {
   it('should return 404 with proper error format', () => {
-    const { req, res, next } = createMocks();
-    req.method = 'GET';
-    req.path = '/api/nonexistent';
+    const { req, res, next } = createMocks('/api/nonexistent', 'GET');
 
     notFoundHandler(req, res, next);
 
@@ -416,9 +413,7 @@ describe('notFoundHandler', () => {
     const methods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
 
     methods.forEach(method => {
-      const { req, res, next } = createMocks();
-      req.method = method;
-      req.path = '/api/test';
+      const { req, res, next } = createMocks('/api/test', method);
 
       notFoundHandler(req, res, next);
 
@@ -436,8 +431,7 @@ describe('notFoundHandler', () => {
     const paths = ['/api/users', '/api/images/123', '/'];
 
     paths.forEach(path => {
-      const { req, res, next } = createMocks();
-      req.path = path;
+      const { req, res, next } = createMocks(path);
 
       notFoundHandler(req, res, next);
 
