@@ -113,7 +113,7 @@ describe('ValidationError', () => {
 
 describe('ProcessingError', () => {
   it('should create ProcessingError with 500 status', () => {
-    const error = new ProcessingError('Compression failed');
+    const error = new ProcessingError('PROCESSING_ERROR', 'Compression failed');
 
     expect(error).toBeInstanceOf(AppError);
     expect(error).toBeInstanceOf(ProcessingError);
@@ -123,10 +123,15 @@ describe('ProcessingError', () => {
   });
 
   it('should include filename and stage context', () => {
-    const error = new ProcessingError('Metadata generation failed', {
-      filename: 'image.jpg',
-      stage: 'metadata',
-    });
+    const error = new ProcessingError(
+      'METADATA_GENERATION_FAILED',
+      'Metadata generation failed',
+      500,
+      {
+        filename: 'image.jpg',
+        stage: 'metadata',
+      }
+    );
 
     expect(error.context).toEqual({
       filename: 'image.jpg',
@@ -136,7 +141,7 @@ describe('ProcessingError', () => {
 
   it('should include original error in context', () => {
     const originalError = new Error('Original error message');
-    const error = new ProcessingError('Processing failed', {
+    const error = new ProcessingError('PROCESSING_FAILED', 'Processing failed', 500, {
       filename: 'test.jpg',
       stage: 'compress',
       originalError,
@@ -157,7 +162,7 @@ describe('ProcessingError', () => {
     ];
 
     stages.forEach(stage => {
-      const error = new ProcessingError('Failed', {
+      const error = new ProcessingError('PROCESSING_FAILED', 'Failed', 500, {
         filename: 'test.jpg',
         stage,
       });
@@ -290,7 +295,7 @@ describe('Type Guards', () => {
 
     it('should return true for AppError subclasses', () => {
       expect(isAppError(new ValidationError('Test'))).toBe(true);
-      expect(isAppError(new ProcessingError('Test'))).toBe(true);
+      expect(isAppError(new ProcessingError('TEST', 'Test'))).toBe(true);
       expect(isAppError(new ExternalServiceError('Test'))).toBe(true);
       expect(isAppError(new RateLimitError('Test'))).toBe(true);
       expect(isAppError(new NotFoundError('Test'))).toBe(true);
@@ -324,7 +329,7 @@ describe('Type Guards', () => {
 
     it('should return true for all built-in error types (all are operational)', () => {
       expect(isOperationalError(new ValidationError('Test'))).toBe(true);
-      expect(isOperationalError(new ProcessingError('Test'))).toBe(true);
+      expect(isOperationalError(new ProcessingError('TEST', 'Test'))).toBe(true);
       expect(isOperationalError(new ExternalServiceError('Test'))).toBe(true);
       expect(isOperationalError(new RateLimitError('Test'))).toBe(true);
       expect(isOperationalError(new NotFoundError('Test'))).toBe(true);
@@ -355,7 +360,7 @@ describe('Error Inheritance', () => {
   it('should have correct constructor names', () => {
     expect(new AppError('', '', 500).constructor.name).toBe('AppError');
     expect(new ValidationError('').constructor.name).toBe('ValidationError');
-    expect(new ProcessingError('').constructor.name).toBe('ProcessingError');
+    expect(new ProcessingError('', '').constructor.name).toBe('ProcessingError');
     expect(new ExternalServiceError('').constructor.name).toBe('ExternalServiceError');
     expect(new RateLimitError('').constructor.name).toBe('RateLimitError');
     expect(new NotFoundError('').constructor.name).toBe('NotFoundError');

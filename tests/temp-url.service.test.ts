@@ -180,6 +180,9 @@ describe('TempUrlService', () => {
       // Fast-forward past cleanup time (10 seconds)
       await vi.advanceTimersByTimeAsync(11000);
 
+      // Run all pending timers to ensure async cleanup completes
+      await vi.runAllTimersAsync();
+
       // File should be deleted
       fileExists = await fs
         .access(outputPath)

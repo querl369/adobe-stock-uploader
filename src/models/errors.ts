@@ -87,7 +87,9 @@ export class ValidationError extends AppError {
  */
 export class ProcessingError extends AppError {
   constructor(
+    code: string,
     message: string,
+    statusCode: number = 500,
     context?: {
       filename?: string;
       stage?: 'compress' | 'temp-url' | 'metadata' | 'csv' | 'cleanup';
@@ -95,7 +97,7 @@ export class ProcessingError extends AppError {
       [key: string]: any;
     }
   ) {
-    super(message, 'PROCESSING_ERROR', 500, true, context);
+    super(message, code, statusCode, true, context);
   }
 }
 

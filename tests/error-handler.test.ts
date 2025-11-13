@@ -68,7 +68,7 @@ describe('errorHandler', () => {
 
     it('should handle ProcessingError with 500 status', () => {
       const { req, res, next } = createMocks();
-      const error = new ProcessingError('Compression failed', {
+      const error = new ProcessingError('PROCESSING_ERROR', 'Compression failed', 500, {
         filename: 'image.jpg',
         stage: 'compress',
       });
@@ -449,7 +449,7 @@ describe('notFoundHandler', () => {
 describe('Integration scenarios', () => {
   it('should handle error thrown in asyncHandler and processed by errorHandler', async () => {
     const { req, res, next } = createMocks();
-    const error = new ProcessingError('Integration test error', {
+    const error = new ProcessingError('PROCESSING_ERROR', 'Integration test error', 500, {
       filename: 'test.jpg',
       stage: 'compress',
     });

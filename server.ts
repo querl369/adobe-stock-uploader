@@ -9,17 +9,14 @@ import fs from 'fs';
 // Import config service (validates environment variables on startup)
 import { config } from './src/config/app.config';
 
-// Import services
-import { tempUrlService } from './src/services/temp-url.service';
+// Import service container (centralized dependency injection)
+import { services } from './src/config/container';
 
 // Import error handling middleware
 import { errorHandler, notFoundHandler } from './src/api/middleware/error-handler';
 
-// Import your existing backend functions (they work as-is!)
-// Note: Using require here because your src files are CommonJS
-const { generateMetadata } = require('./src/openai');
+// Import legacy file utilities (will be refactored in future stories)
 const { renameImages } = require('./src/files-manipulation');
-const { writeMetadataToCSV } = require('./src/csv-writer');
 
 // ============================================
 // Type Definitions
@@ -128,11 +125,11 @@ app.post('/api/process-image', async (req: Request, res: Response) => {
     console.log(`Processing ${filename}...`);
 
     // Create temporary URL (self-hosted, replaces Cloudinary)
-    const url = await tempUrlService.createTempUrlFromPath(filePath);
+    const url = await services.tempUrl.createTempUrlFromPath(filePath);
     console.log(`Created temp URL for ${filename}`);
 
-    // Generate metadata using OpenAI
-    const metadata = await generateMetadata(url);
+    // Generate metadata using AI service
+    const rawMetadata = await services.metadata.generateMetadata(url);
     console.log(`Generated metadata for ${filename}`);
 
     // Note: Cleanup is automatic via TempUrlService scheduled cleanup
@@ -141,9 +138,11 @@ app.post('/api/process-image', async (req: Request, res: Response) => {
     const result: ProcessResult = {
       success: true,
       filename: filename,
-      title: metadata.title,
-      keywords: metadata.keywords,
-      category: metadata.category,
+      title: rawMetadata.title,
+      keywords: Array.isArray(rawMetadata.keywords)
+        ? rawMetadata.keywords.join(',')
+        : String(rawMetadata.keywords),
+      category: String(rawMetadata.category),
     };
 
     res.json(result);
@@ -233,20 +232,22 @@ app.post('/api/process-batch', async (req: Request, res: Response) => {
         console.log(`[${i + 1}/${renamedFiles.length}] Processing ${file}...`);
 
         // Create temporary URL (self-hosted, replaces Cloudinary)
-        const url = await tempUrlService.createTempUrlFromPath(filePath);
+        const url = await services.tempUrl.createTempUrlFromPath(filePath);
         console.log(`✅ Created temp URL: ${url}`);
 
-        // Generate metadata
-        const metadata = await generateMetadata(url);
+        // Generate metadata using AI service
+        const rawMetadata = await services.metadata.generateMetadata(url);
         console.log(`✅ Generated metadata for ${file}`);
 
         // Note: Cleanup is automatic via TempUrlService scheduled cleanup
 
         metadataList.push({
           fileName: file,
-          title: metadata.title,
-          keywords: metadata.keywords,
-          category: metadata.category,
+          title: rawMetadata.title,
+          keywords: Array.isArray(rawMetadata.keywords)
+            ? rawMetadata.keywords.join(',')
+            : String(rawMetadata.keywords),
+          category: Number(rawMetadata.category),
         });
       } catch (error) {
         console.error(`Error processing ${file}:`, error);
@@ -268,12 +269,12 @@ app.post('/api/process-batch', async (req: Request, res: Response) => {
         filename: item.fileName,
         title: item.title || '',
         keywords: item.keywords || '',
-        category: String(item.category || ''),
+        category: Number(item.category || 0),
         releases: initials,
       }));
 
     if (successfulMetadata.length > 0) {
-      await writeMetadataToCSV(successfulMetadata, csvPath);
+      await services.csvExport.generateCSV(successfulMetadata, csvPath);
       console.log(`✅ CSV file created: ${csvFileName}`);
     }
 
