@@ -1,10 +1,8 @@
 import fs from 'fs';
 import path from 'path';
-import { tempUrlService } from './services/temp-url.service';
-import { generateMetadata } from './openai';
+import { services } from './config/container';
 import { renameImages, convertPngToJpeg } from './files-manipulation';
-
-import { writeMetadataToCSV, Metadata } from './csv-writer';
+import type { Metadata } from './models/metadata.model';
 
 const initials = 'OY';
 async function processImages(imageDir: string, outputCsvPath: string, initials: string) {
@@ -30,19 +28,21 @@ async function processImages(imageDir: string, outputCsvPath: string, initials: 
         try {
           console.log(`Processing ${file}...`);
           const filePath = path.join(imageDir, file);
-          const url = await tempUrlService.createTempUrlFromPath(filePath);
+          const url = await services.tempUrl.createTempUrlFromPath(filePath);
           console.log(`Created temp URL for ${file}: ${url}`);
 
-          const metadata = await generateMetadata(url);
+          const rawMetadata = await services.metadata.generateMetadata(url);
           console.log(`Generated metadata for ${file}`);
 
           // Note: Cleanup is automatic via TempUrlService
 
           return {
             filename: file,
-            title: metadata.title,
-            keywords: metadata.keywords,
-            category: metadata.category,
+            title: rawMetadata.title,
+            keywords: Array.isArray(rawMetadata.keywords)
+              ? rawMetadata.keywords.join(',')
+              : String(rawMetadata.keywords),
+            category: Number(rawMetadata.category),
             releases: 'Oleksii Yemets',
           };
         } catch (error) {
@@ -57,7 +57,7 @@ async function processImages(imageDir: string, outputCsvPath: string, initials: 
     metadataList.push(...batchResults.filter(result => result !== null));
   }
 
-  await writeMetadataToCSV(metadataList, outputCsvPath);
+  await services.csvExport.generateCSV(metadataList, outputCsvPath);
   console.log(`Processed ${metadataList.length} of ${renamedFiles.length} images successfully.`);
 }
 
