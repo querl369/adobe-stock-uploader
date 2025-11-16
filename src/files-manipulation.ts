@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import sharp from 'sharp';
+import { logger } from '@/utils/logger';
 
 // Function to get current date formatted as YYYYMMDD
 function getCurrentFormattedDate(): string {
@@ -31,7 +32,7 @@ export async function convertPngToJpeg({
       .jpeg({ quality: 100, chromaSubsampling: '4:4:4' })
       .toFile(outputFilePath);
 
-    console.log(`✅ Converted ${file} → ${outputFileName}`);
+    logger.info({ inputFile: file, outputFile: outputFileName }, 'Converted PNG to JPEG');
 
     // Check if the new JPEG file was created
     if (!fs.existsSync(outputFilePath)) {
@@ -63,7 +64,7 @@ export function renameImages(directoryPath: string, initials: string): string[] 
     const newFilePath = path.join(directoryPath, newFileName);
 
     fs.renameSync(oldFilePath, newFilePath);
-    console.log(`✅ Renamed: ${file} ➜ ${newFileName}`);
+    logger.info({ oldName: file, newName: newFileName }, 'Renamed image');
 
     renamedFiles.push(newFileName);
     counter++;

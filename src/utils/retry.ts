@@ -17,6 +17,8 @@
  *   );
  */
 
+import { logger } from './logger';
+
 /**
  * Configuration options for retry behavior
  */
@@ -207,7 +209,7 @@ export async function withRetry<T>(
 
       // If successful on a retry (not first attempt), log it for monitoring
       if (attempt > 0) {
-        console.log(`[Retry Success] Operation succeeded on attempt ${attempt + 1}/${maxAttempts}`);
+        logger.info({ attempt: attempt + 1, maxAttempts }, 'Retry operation succeeded');
       }
 
       return result;
@@ -221,14 +223,14 @@ export async function withRetry<T>(
       // If this was the last attempt or error is not retryable, throw
       if (attempt >= maxAttempts || !isRetryable) {
         if (attempt >= maxAttempts) {
-          console.error(
-            `[Retry Failed] All ${maxAttempts} attempts exhausted. Last error:`,
-            getErrorMessage(error)
+          logger.error(
+            { maxAttempts, error: getErrorMessage(error) },
+            'Retry failed - all attempts exhausted'
           );
         } else {
-          console.error(
-            `[Retry Failed] Non-retryable error encountered on attempt ${attempt}:`,
-            getErrorMessage(error)
+          logger.error(
+            { attempt, error: getErrorMessage(error) },
+            'Retry failed - non-retryable error'
           );
         }
         throw error;
@@ -238,9 +240,9 @@ export async function withRetry<T>(
       const backoffDelay = calculateBackoffDelay(attempt - 1, options);
 
       // Log retry attempt with context
-      console.warn(
-        `[Retry Attempt ${attempt}/${maxAttempts}] Operation failed: ${getErrorMessage(error)}. ` +
-          `Retrying in ${backoffDelay}ms...`
+      logger.warn(
+        { attempt, maxAttempts, error: getErrorMessage(error), backoffMs: backoffDelay },
+        'Retry attempt failed, retrying...'
       );
 
       // Wait before next attempt

@@ -18,6 +18,7 @@ import { TempUrlService } from '@/services/temp-url.service';
 import { MetadataService } from '@/services/metadata.service';
 import { ImageProcessingService } from '@/services/image-processing.service';
 import { CsvExportService } from '@/services/csv-export.service';
+import { logger } from '@/utils/logger';
 
 /**
  * Service container interface
@@ -77,7 +78,7 @@ class Container {
    * 4. CsvExportService (no dependencies)
    */
   private initializeServices(): ServiceContainer {
-    console.log('🔧 Initializing service container...');
+    logger.info('Initializing service container');
 
     // Step 1: Initialize services with no dependencies
     const tempUrlService = new TempUrlService();
@@ -87,7 +88,7 @@ class Container {
     // Step 2: Initialize services with dependencies
     const imageProcessingService = new ImageProcessingService(tempUrlService, metadataService);
 
-    console.log('✅ Service container initialized successfully');
+    logger.info('Service container initialized successfully');
 
     return {
       tempUrl: tempUrlService,
@@ -116,7 +117,7 @@ class Container {
    */
   reset(): void {
     this._services = null;
-    console.log('🔄 Service container reset');
+    logger.info('Service container reset');
   }
 }
 

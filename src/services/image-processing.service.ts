@@ -18,6 +18,7 @@ import { MetadataService } from './metadata.service';
 import type { ProcessingResult, Metadata, BatchProcessingOptions } from '@/models/metadata.model';
 import { ProcessingError } from '@/models/errors';
 import { withRetry } from '@/utils/retry';
+import { logger } from '@/utils/logger';
 
 /**
  * Service for processing images and generating metadata
@@ -43,9 +44,9 @@ export class ImageProcessingService {
    * @example
    * const result = await imageProcessingService.processImage(req.file);
    * if (result.success) {
-   *   console.log('Generated metadata:', result.metadata);
+   *   logger.info({ metadata: result.metadata }, 'Generated metadata');
    * } else {
-   *   console.error('Processing failed:', result.error);
+   *   logger.error({ error: result.error }, 'Processing failed');
    * }
    */
   async processImage(file: Express.Multer.File): Promise<ProcessingResult> {
@@ -127,7 +128,7 @@ export class ImageProcessingService {
    *
    * const successful = results.filter(r => r.success);
    * const failed = results.filter(r => !r.success);
-   * console.log(`Processed ${successful.length}/${results.length} successfully`);
+   * logger.info({ successCount: successful.length, total: results.length }, 'Batch processing complete');
    */
   async processBatch(
     files: Express.Multer.File[],
@@ -144,7 +145,7 @@ export class ImageProcessingService {
       throw new ProcessingError('EMPTY_FILE_LIST', 'Cannot process empty file list', 400);
     }
 
-    console.log(`📦 Starting batch processing: ${files.length} images (${concurrency} concurrent)`);
+    logger.info({ count: files.length, concurrency }, 'Starting batch processing');
 
     // For now, implement simple sequential processing
     // In a future iteration, we can use p-limit for true concurrency control
@@ -157,7 +158,7 @@ export class ImageProcessingService {
         results.push(result);
 
         if (!result.success && !continueOnError) {
-          console.error(`❌ Processing failed for ${file.originalname}, stopping batch`);
+          logger.error({ filename: file.originalname }, 'Processing failed, stopping batch');
           break;
         }
       } catch (error) {
@@ -181,7 +182,7 @@ export class ImageProcessingService {
     // Log summary
     const successful = results.filter(r => r.success).length;
     const failed = results.length - successful;
-    console.log(`✅ Batch processing complete: ${successful} succeeded, ${failed} failed`);
+    logger.info({ successful, failed, total: results.length }, 'Batch processing complete');
 
     return results;
   }

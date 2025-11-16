@@ -8,6 +8,7 @@
 import { createObjectCsvWriter } from 'csv-writer';
 import type { Metadata } from '@/models/metadata.model';
 import { ProcessingError } from '@/models/errors';
+import { logger } from '@/utils/logger';
 
 /**
  * Service for exporting metadata to CSV files
@@ -63,7 +64,10 @@ export class CsvExportService {
       // Write metadata to CSV file
       await csvWriter.writeRecords(metadataList);
 
-      console.log(`✅ Metadata successfully written to ${outputPath}`);
+      logger.info(
+        { outputPath, recordCount: metadataList.length },
+        'Metadata successfully written to CSV'
+      );
     } catch (error) {
       // Wrap filesystem errors in ProcessingError
       if (error instanceof ProcessingError) {

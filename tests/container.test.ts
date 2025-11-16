@@ -10,6 +10,16 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+// Mock logger before importing container
+vi.mock('../src/utils/logger', () => ({
+  logger: {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
+
 // Mock config before importing container
 vi.mock('../src/config/app.config', () => ({
   config: {
@@ -39,6 +49,7 @@ vi.mock('../src/config/app.config', () => ({
 
 import { container, services } from '../src/config/container';
 import type { ServiceContainer } from '../src/config/container';
+import { logger } from '../src/utils/logger';
 
 describe('Dependency Injection Container', () => {
   afterEach(() => {
@@ -66,7 +77,8 @@ describe('Dependency Injection Container', () => {
     });
 
     it('should initialize services only once', () => {
-      const consoleSpy = vi.spyOn(console, 'log');
+      const loggerSpy = vi.mocked(logger.info);
+      loggerSpy.mockClear();
 
       // Access services multiple times
       const _ = container.services;
@@ -74,13 +86,13 @@ describe('Dependency Injection Container', () => {
       const ___ = container.services;
 
       // Should only see one "Initializing service container" message
-      const initMessages = consoleSpy.mock.calls.filter(call =>
-        call[0]?.includes('Initializing service container')
+      const initCalls = loggerSpy.mock.calls.filter(
+        call =>
+          call[0]?.includes?.('Initializing service container') ||
+          call[0] === 'Initializing service container'
       );
 
-      expect(initMessages.length).toBe(1);
-
-      consoleSpy.mockRestore();
+      expect(initCalls.length).toBe(1);
     });
   });
 
@@ -154,13 +166,12 @@ describe('Dependency Injection Container', () => {
     });
 
     it('should log reset message', () => {
-      const consoleSpy = vi.spyOn(console, 'log');
+      const loggerSpy = vi.mocked(logger.info);
+      loggerSpy.mockClear();
 
       container.reset();
 
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Service container reset'));
-
-      consoleSpy.mockRestore();
+      expect(loggerSpy).toHaveBeenCalledWith('Service container reset');
     });
 
     it('should allow normal operation after reset', () => {

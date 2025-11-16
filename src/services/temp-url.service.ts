@@ -3,6 +3,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import sharp from 'sharp';
 import { config } from '@config/app.config';
+import { logger } from '@utils/logger';
 
 /**
  * TempUrlService
@@ -52,6 +53,9 @@ export class TempUrlService {
     const filepath = path.join(this.tempDir, filename);
 
     try {
+      // Ensure temp directory exists before writing
+      await this.ensureTempDirExists();
+
       // Compress image with Sharp
       await sharp(file.buffer)
         .resize(1024, 1024, {
@@ -94,6 +98,9 @@ export class TempUrlService {
     const outputPath = path.join(this.tempDir, filename);
 
     try {
+      // Ensure temp directory exists before writing
+      await this.ensureTempDirExists();
+
       // Compress image with Sharp (Sharp can read directly from file path)
       await sharp(filePath)
         .resize(1024, 1024, {
@@ -142,7 +149,10 @@ export class TempUrlService {
     } catch (error) {
       // File might already be deleted - ignore error
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        console.error(`Failed to cleanup temp file ${uuid}:`, error);
+        logger.error(
+          { uuid, error: error instanceof Error ? error.message : 'Unknown' },
+          'Failed to cleanup temp file'
+        );
       }
     }
   }
@@ -185,17 +195,23 @@ export class TempUrlService {
 
           if (age > maxAge) {
             await fs.unlink(filepath);
-            console.log(`Cleaned up old temp file: ${file} (age: ${Math.round(age / 1000)}s)`);
+            logger.debug({ file, ageSeconds: Math.round(age / 1000) }, 'Cleaned up old temp file');
           }
         } catch (error) {
           // File might be deleted by another process - ignore
           if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-            console.error(`Error checking temp file ${file}:`, error);
+            logger.error(
+              { file, error: error instanceof Error ? error.message : 'Unknown' },
+              'Error checking temp file'
+            );
           }
         }
       }
     } catch (error) {
-      console.error('Error during cleanup of old files:', error);
+      logger.error(
+        { error: error instanceof Error ? error.message : 'Unknown' },
+        'Error during cleanup of old files'
+      );
     }
   }
 
@@ -204,11 +220,11 @@ export class TempUrlService {
    */
   private startBackgroundCleanup(): void {
     // Run immediately on startup (fire-and-forget)
-    this.cleanupOldFiles().catch(err => console.error('Background cleanup error:', err));
+    this.cleanupOldFiles().catch(err => logger.error({ error: err }, 'Background cleanup error'));
 
     // Then run every 30 seconds
     this.cleanupIntervalId = setInterval(() => {
-      this.cleanupOldFiles().catch(err => console.error('Background cleanup error:', err));
+      this.cleanupOldFiles().catch(err => logger.error({ error: err }, 'Background cleanup error'));
     }, 30 * 1000);
   }
 
@@ -236,7 +252,7 @@ export class TempUrlService {
       await fs.access(this.tempDir);
     } catch {
       await fs.mkdir(this.tempDir, { recursive: true });
-      console.log(`Created temp directory: ${this.tempDir}`);
+      logger.info({ tempDir: this.tempDir }, 'Created temp directory');
     }
   }
 }

@@ -49,7 +49,7 @@ development_status:
   1-6-error-architecture-and-typed-errors: done
   1-7-retry-logic-and-resilience: done
   1-8-service-layer-and-dependency-injection: done
-  1-9-structured-logging-with-pino: backlog
+  1-9-structured-logging-with-pino: review
   1-10-metrics-collection-with-prometheus: backlog
   1-11-health-checks-and-readiness-probes: backlog
   epic-1-retrospective: optional

@@ -15,6 +15,12 @@ import { services } from './src/config/container';
 // Import error handling middleware
 import { errorHandler, notFoundHandler } from './src/api/middleware/error-handler';
 
+// Import correlation ID middleware for request tracking
+import { correlationIdMiddleware } from './src/api/middleware/correlation-id.middleware';
+
+// Import logger
+import { logger } from './src/utils/logger';
+
 // Import legacy file utilities (will be refactored in future stories)
 const { renameImages } = require('./src/files-manipulation');
 
@@ -55,6 +61,10 @@ const PORT = config.server.port;
 
 // Middleware - allows receiving JSON data and serving static files
 app.use(express.json());
+
+// Add correlation ID middleware early (for request tracking)
+app.use(correlationIdMiddleware);
+
 // Serve static files from Vite build
 app.use(express.static('dist'));
 // Serve temporary image files (for OpenAI Vision API access)
@@ -105,7 +115,10 @@ app.post('/api/upload', upload.single('image'), async (req: Request, res: Respon
 
     res.json({ success: true, file: fileInfo });
   } catch (error) {
-    console.error('Upload error:', error);
+    logger.error(
+      { error: error instanceof Error ? error.message : 'Unknown', file: req.file?.originalname },
+      'Upload error'
+    );
     res.status(500).json({ error: (error as Error).message });
   }
 });
@@ -122,15 +135,15 @@ app.post('/api/process-image', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'File not found' });
     }
 
-    console.log(`Processing ${filename}...`);
+    req.log.info({ filename }, 'Processing image');
 
     // Create temporary URL (self-hosted, replaces Cloudinary)
     const url = await services.tempUrl.createTempUrlFromPath(filePath);
-    console.log(`Created temp URL for ${filename}`);
+    req.log.debug({ filename, url }, 'Created temp URL');
 
     // Generate metadata using AI service
     const rawMetadata = await services.metadata.generateMetadata(url);
-    console.log(`Generated metadata for ${filename}`);
+    req.log.info({ filename }, 'Generated metadata');
 
     // Note: Cleanup is automatic via TempUrlService scheduled cleanup
 
@@ -147,7 +160,10 @@ app.post('/api/process-image', async (req: Request, res: Response) => {
 
     res.json(result);
   } catch (error) {
-    console.error('Processing error:', error);
+    logger.error(
+      { error: error instanceof Error ? error.message : 'Unknown', filename: req.body.filename },
+      'Processing error'
+    );
     res.status(500).json({
       success: false,
       error: (error as Error).message,
@@ -176,19 +192,19 @@ app.post('/api/process-batch', async (req: Request, res: Response) => {
     }> = [];
 
     // Clean the images directory first to avoid processing old files
-    console.log('🧹 Cleaning images directory...');
+    logger.info('Cleaning images directory');
     if (fs.existsSync('images')) {
       const existingFiles = fs.readdirSync('images');
       for (const file of existingFiles) {
         if (file.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
           fs.unlinkSync(path.join('images', file));
-          console.log(`   🗑️ Removed old file: ${file}`);
+          logger.debug({ file }, 'Removed old file');
         }
       }
     }
 
     // Check uploads directory
-    console.log('📂 Checking uploads directory...');
+    logger.info('Checking uploads directory');
     if (!fs.existsSync('uploads')) {
       return res.status(400).json({ error: 'No files uploaded yet. Please upload images first.' });
     }
@@ -197,31 +213,28 @@ app.post('/api/process-batch', async (req: Request, res: Response) => {
       .readdirSync('uploads')
       .filter(file => file.match(/\.(jpg|jpeg|png|gif|webp)$/i));
 
-    console.log(
-      `   Found ${uploadedFiles.length} files in uploads:`,
-      uploadedFiles.map(f => f.substring(0, 30) + '...')
-    );
+    logger.info({ count: uploadedFiles.length }, 'Found files in uploads');
 
     if (uploadedFiles.length === 0) {
       return res.status(400).json({ error: 'No image files found in uploads directory' });
     }
 
     // Copy uploaded files to images directory
-    console.log('📋 Copying files to images directory...');
+    logger.info('Copying files to images directory');
     for (const file of uploadedFiles) {
       const srcPath = path.join('uploads', file);
       const destPath = path.join('images', file);
 
       if (fs.existsSync(srcPath)) {
         fs.copyFileSync(srcPath, destPath);
-        console.log(`   ✅ Copied: ${file}`);
+        logger.debug({ file }, 'Copied file');
       }
     }
 
     // Rename images with initials
     const renamedFiles: string[] = renameImages('images', initials);
 
-    console.log(`Processing ${renamedFiles.length} images in batch...`);
+    logger.info({ count: renamedFiles.length, initials }, 'Processing batch');
 
     // Process each image
     for (let i = 0; i < renamedFiles.length; i++) {
@@ -229,15 +242,15 @@ app.post('/api/process-batch', async (req: Request, res: Response) => {
       const filePath = path.join('images', file);
 
       try {
-        console.log(`[${i + 1}/${renamedFiles.length}] Processing ${file}...`);
+        req.log.info({ file, progress: `${i + 1}/${renamedFiles.length}` }, 'Processing image');
 
         // Create temporary URL (self-hosted, replaces Cloudinary)
         const url = await services.tempUrl.createTempUrlFromPath(filePath);
-        console.log(`✅ Created temp URL: ${url}`);
+        req.log.debug({ file, url }, 'Created temp URL');
 
         // Generate metadata using AI service
         const rawMetadata = await services.metadata.generateMetadata(url);
-        console.log(`✅ Generated metadata for ${file}`);
+        req.log.info({ file }, 'Generated metadata');
 
         // Note: Cleanup is automatic via TempUrlService scheduled cleanup
 
@@ -250,7 +263,10 @@ app.post('/api/process-batch', async (req: Request, res: Response) => {
           category: Number(rawMetadata.category),
         });
       } catch (error) {
-        console.error(`Error processing ${file}:`, error);
+        logger.error(
+          { file, error: error instanceof Error ? error.message : 'Unknown' },
+          'Error processing file'
+        );
         metadataList.push({
           fileName: file,
           error: (error as Error).message,
@@ -275,7 +291,7 @@ app.post('/api/process-batch', async (req: Request, res: Response) => {
 
     if (successfulMetadata.length > 0) {
       await services.csvExport.generateCSV(successfulMetadata, csvPath);
-      console.log(`✅ CSV file created: ${csvFileName}`);
+      logger.info({ csvFileName, count: successfulMetadata.length }, 'CSV file created');
     }
 
     // Clean up uploads directory
@@ -285,7 +301,7 @@ app.post('/api/process-batch', async (req: Request, res: Response) => {
         fs.unlinkSync(filePath);
       }
     }
-    console.log('🧹 Cleaned uploads directory');
+    logger.info('Cleaned uploads directory');
 
     res.json({
       success: true,
@@ -293,7 +309,10 @@ app.post('/api/process-batch', async (req: Request, res: Response) => {
       csvFileName,
     });
   } catch (error) {
-    console.error('Batch processing error:', error);
+    logger.error(
+      { error: error instanceof Error ? error.message : 'Unknown' },
+      'Batch processing error'
+    );
     res.status(500).json({ error: (error as Error).message });
   }
 });
@@ -315,16 +334,16 @@ app.post('/api/export-csv', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'CSV file not found' });
     }
 
-    console.log(`📥 Downloading CSV: ${csvFileName}`);
+    req.log.info({ csvFileName }, 'Downloading CSV');
 
     // Send the CSV file as download
     res.download(csvPath, csvFileName, err => {
       if (err) {
-        console.error('Error downloading CSV:', err);
+        logger.error({ csvFileName, error: err.message }, 'Error downloading CSV');
       }
     });
   } catch (error) {
-    console.error('CSV export error:', error);
+    logger.error({ error: error instanceof Error ? error.message : 'Unknown' }, 'CSV export error');
     res.status(500).json({ error: (error as Error).message });
   }
 });
@@ -352,7 +371,7 @@ app.post('/api/cleanup', (req: Request, res: Response) => {
 
     res.json({ success: true, message: 'Cleanup completed' });
   } catch (error) {
-    console.error('Cleanup error:', error);
+    logger.error({ error: error instanceof Error ? error.message : 'Unknown' }, 'Cleanup error');
     res.status(500).json({ error: (error as Error).message });
   }
 });
@@ -382,7 +401,12 @@ app.use(errorHandler);
 // ============================================
 
 app.listen(PORT, () => {
-  console.log('\n🚀 Adobe Stock Uploader is running!');
-  console.log(`📱 Open your browser and go to: http://localhost:${PORT}`);
-  console.log(`\nPress Ctrl+C to stop the server\n`);
+  logger.info(
+    {
+      port: PORT,
+      url: `http://localhost:${PORT}`,
+      nodeEnv: config.server.nodeEnv,
+    },
+    'Adobe Stock Uploader server started'
+  );
 });

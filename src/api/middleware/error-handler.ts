@@ -20,6 +20,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { AppError, isAppError, RateLimitError } from '../../models/errors';
+import { logger } from '@utils/logger';
 
 /**
  * Main error handling middleware
@@ -33,15 +34,18 @@ export function errorHandler(
   res: Response,
   _next: NextFunction
 ) {
-  // Log error for debugging (always log to console for now)
-  console.error('❌ Error caught by error handler:', {
-    name: err.name,
-    message: err.message,
-    code: isAppError(err) ? err.code : 'UNKNOWN_ERROR',
-    path: req.path,
-    method: req.method,
-    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
-  });
+  // Log error with context for debugging
+  logger.error(
+    {
+      name: err.name,
+      message: err.message,
+      code: isAppError(err) ? err.code : 'UNKNOWN_ERROR',
+      path: req.path,
+      method: req.method,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+    },
+    'Error caught by error handler'
+  );
 
   // Handle AppError instances (our custom errors)
   if (isAppError(err)) {

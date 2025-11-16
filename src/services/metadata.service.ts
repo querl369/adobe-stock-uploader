@@ -11,6 +11,7 @@ import { config } from '@/config/app.config';
 import { PROMPT_TEXT } from '@/prompt-text';
 import { ExternalServiceError } from '@/models/errors';
 import { withRetry } from '@/utils/retry';
+import { logger } from '@/utils/logger';
 import type { RawAIMetadata } from '@/models/metadata.model';
 
 /**
@@ -34,7 +35,7 @@ export class MetadataService {
    *
    * @example
    * const metadata = await metadataService.generateMetadata('https://example.com/image.jpg');
-   * console.log(metadata.title, metadata.keywords, metadata.category);
+   * logger.info({ title: metadata.title, keywords: metadata.keywords }, 'Metadata generated');
    */
   async generateMetadata(imageUrl: string): Promise<RawAIMetadata> {
     try {
@@ -123,7 +124,10 @@ export class MetadataService {
 
       return parsed as RawAIMetadata;
     } catch (error) {
-      console.error('Failed to parse JSON from OpenAI response:', responseText);
+      logger.error(
+        { responseText, error: error instanceof Error ? error.message : 'Unknown' },
+        'Failed to parse JSON from OpenAI response'
+      );
       throw new Error(
         `Invalid JSON response from OpenAI: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
@@ -143,7 +147,10 @@ export class MetadataService {
       await this.openai.models.list();
       return true;
     } catch (error) {
-      console.error('OpenAI API connection validation failed:', error);
+      logger.error(
+        { error: error instanceof Error ? error.message : 'Unknown' },
+        'OpenAI API connection validation failed'
+      );
       return false;
     }
   }

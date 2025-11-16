@@ -25,6 +25,7 @@ import path from 'path';
 import { services } from './config/container';
 import { renameImages, convertPngToJpeg } from './files-manipulation';
 import type { Metadata } from './models/metadata.model';
+import { logger } from './utils/logger';
 
 // Configuration
 const initials = process.env.INITIALS || 'OY';
@@ -47,20 +48,17 @@ async function processImages(
   const metadataList: Metadata[] = [];
   const failedImages: Array<{ file: string; error: string }> = [];
 
-  console.log('📂 Starting batch processing...');
-  console.log(`   Directory: ${imageDir}`);
-  console.log(`   Output: ${outputCsvPath}`);
-  console.log(`   Initials: ${initials}\n`);
+  logger.info({ imageDir, outputCsvPath, initials }, 'Starting batch processing');
 
   // Optional: Convert PNG to JPEG (currently disabled)
   // await convertPngToJpeg({ inputDir: imageDir, outputDir: imageDir });
 
   // Rename images with standard format
   const renamedFiles = renameImages(imageDir, initials);
-  console.log(`📋 Found ${renamedFiles.length} images to process\n`);
+  logger.info({ count: renamedFiles.length }, 'Found images to process');
 
   if (renamedFiles.length === 0) {
-    console.warn('⚠️  No images found in directory');
+    logger.warn('No images found in directory');
     return;
   }
 
@@ -73,13 +71,13 @@ async function processImages(
     const batchNumber = i / CONCURRENCY_LIMIT + 1;
     const totalBatches = Math.ceil(renamedFiles.length / CONCURRENCY_LIMIT);
 
-    console.log(`📦 Processing batch ${batchNumber}/${totalBatches} (${batch.length} images)`);
+    logger.info({ batchNumber, totalBatches, batchSize: batch.length }, 'Processing batch');
 
     // Process this batch in parallel
     const batchResults = await Promise.all(
       batch.map(async file => {
         try {
-          console.log(`   Processing ${file}...`);
+          logger.debug({ file }, 'Processing image');
           const filePath = path.join(imageDir, file);
 
           // Create temporary URL (self-hosted, automatic cleanup)
@@ -88,7 +86,7 @@ async function processImages(
           // Generate metadata using AI service
           const rawMetadata = await services.metadata.generateMetadata(url);
 
-          console.log(`   ✅ Completed: ${file}`);
+          logger.info({ file }, 'Completed processing');
 
           return {
             filename: file,
@@ -101,7 +99,7 @@ async function processImages(
           } as Metadata;
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-          console.error(`   ❌ Failed: ${file} - ${errorMessage}`);
+          logger.error({ file, error: errorMessage }, 'Failed processing');
           failedImages.push({ file, error: errorMessage });
           return null;
         }
@@ -112,29 +110,32 @@ async function processImages(
     const successful = batchResults.filter((result): result is Metadata => result !== null);
     metadataList.push(...successful);
 
-    console.log(
-      `   Batch complete: ${successful.length} succeeded, ${batch.length - successful.length} failed\n`
+    logger.info(
+      { succeeded: successful.length, failed: batch.length - successful.length },
+      'Batch complete'
     );
   }
 
   // Generate CSV file
   if (metadataList.length > 0) {
     await services.csvExport.generateCSV(metadataList, outputCsvPath);
-    console.log(`\n✅ CSV file created: ${outputCsvPath}`);
+    logger.info({ outputCsvPath }, 'CSV file created');
   } else {
-    console.warn('\n⚠️  No successful processing results - CSV not generated');
+    logger.warn('No successful processing results - CSV not generated');
   }
 
   // Print summary
-  console.log('\n📊 Processing Summary:');
-  console.log(`   ✅ Successful: ${metadataList.length}/${renamedFiles.length}`);
-  console.log(`   ❌ Failed: ${failedImages.length}/${renamedFiles.length}`);
+  logger.info(
+    {
+      successful: metadataList.length,
+      total: renamedFiles.length,
+      failed: failedImages.length,
+    },
+    'Processing summary'
+  );
 
   if (failedImages.length > 0) {
-    console.log('\n❌ Failed Images:');
-    failedImages.forEach(({ file, error }) => {
-      console.log(`   - ${file}: ${error}`);
-    });
+    logger.error({ failedImages }, 'Failed images');
   }
 
   // Throw error if all images failed
@@ -153,10 +154,10 @@ async function main(): Promise<void> {
     await processImages(imageDirectory, outputCsv, initials);
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`\n🎉 All images processed successfully in ${duration}s`);
+    logger.info({ durationSeconds: duration }, 'All images processed successfully');
   } finally {
     // Always cleanup resources, even on error
-    console.log('\n🧹 Cleaning up resources...');
+    logger.info('Cleaning up resources');
     services.tempUrl.stopBackgroundCleanup();
   }
 }
@@ -164,15 +165,16 @@ async function main(): Promise<void> {
 // Execute main function with proper exit codes
 main()
   .then(() => {
-    console.log('✅ Script completed successfully\n');
+    logger.info('Script completed successfully');
     process.exit(0);
   })
   .catch(error => {
-    console.error('\n💥 Script failed with error:');
-    console.error(error instanceof Error ? error.message : 'Unknown error');
-    if (error instanceof Error && error.stack) {
-      console.error('\nStack trace:');
-      console.error(error.stack);
-    }
+    logger.error(
+      {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      },
+      'Script failed with error'
+    );
     process.exit(1);
   });

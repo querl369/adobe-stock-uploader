@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import * as dotenv from 'dotenv';
+import { logger } from '@utils/logger';
 
 dotenv.config();
 
@@ -34,13 +35,19 @@ class ConfigService {
     const result = envSchema.safeParse(process.env);
 
     if (!result.success) {
-      console.error('❌ Configuration validation failed:');
-      console.error(result.error.format());
+      logger.error({ errors: result.error.format() }, 'Configuration validation failed');
       process.exit(1);
     }
 
     this.config = result.data;
-    console.log('✅ Configuration validated successfully');
+    logger.info(
+      {
+        nodeEnv: this.config.NODE_ENV,
+        port: this.config.PORT,
+        model: this.config.OPENAI_MODEL,
+      },
+      'Configuration validated successfully'
+    );
   }
 
   get server() {
