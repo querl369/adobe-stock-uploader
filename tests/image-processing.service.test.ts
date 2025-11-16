@@ -14,6 +14,7 @@ import { TempUrlService } from '../src/services/temp-url.service';
 import { MetadataService } from '../src/services/metadata.service';
 import type { ProcessingResult, RawAIMetadata } from '../src/models/metadata.model';
 import { ProcessingError } from '../src/models/errors';
+import * as loggerModule from '../src/utils/logger';
 
 // Mock dependencies
 vi.mock('../src/services/temp-url.service');
@@ -325,18 +326,18 @@ describe('ImageProcessingService', () => {
         category: 1,
       });
 
-      const consoleSpy = vi.spyOn(console, 'log');
+      const loggerSpy = vi.spyOn(loggerModule.logger, 'info');
 
       await service.processBatch(mockFiles);
 
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Starting batch processing: 2 images')
+      expect(loggerSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ count: 2 }),
+        expect.stringContaining('Starting batch processing')
       );
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Batch processing complete: 2 succeeded, 0 failed')
+      expect(loggerSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ successful: 2, failed: 0, total: 2 }),
+        expect.stringContaining('Batch processing complete')
       );
-
-      consoleSpy.mockRestore();
     });
 
     it('should use custom concurrency setting', async () => {

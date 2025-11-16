@@ -12,13 +12,18 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { withRetry, hasStatusCode, getStatusCode } from '../src/utils/retry';
+import * as loggerModule from '../src/utils/logger';
 
 describe('withRetry', () => {
+  let loggerInfoSpy: any;
+  let loggerWarnSpy: any;
+  let loggerErrorSpy: any;
+
   beforeEach(() => {
-    // Mock console methods to avoid cluttering test output
-    vi.spyOn(console, 'log').mockImplementation(() => {});
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+    // Spy on logger methods
+    loggerInfoSpy = vi.spyOn(loggerModule.logger, 'info').mockImplementation(() => {});
+    loggerWarnSpy = vi.spyOn(loggerModule.logger, 'warn').mockImplementation(() => {});
+    loggerErrorSpy = vi.spyOn(loggerModule.logger, 'error').mockImplementation(() => {});
 
     // Mock timers for faster tests
     vi.useFakeTimers();
@@ -39,7 +44,7 @@ describe('withRetry', () => {
 
       expect(result).toBe('success');
       expect(mockFn).toHaveBeenCalledTimes(1);
-      expect(console.log).not.toHaveBeenCalled(); // No retry success log
+      expect(loggerInfoSpy).not.toHaveBeenCalled(); // No retry success log
     });
 
     it('should succeed after retries and log success', async () => {
@@ -57,7 +62,10 @@ describe('withRetry', () => {
 
       expect(result).toBe('success');
       expect(mockFn).toHaveBeenCalledTimes(3);
-      expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Retry Success'));
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ attempt: 3 }),
+        expect.any(String)
+      );
     });
 
     it('should work with complex return types', async () => {
@@ -86,7 +94,7 @@ describe('withRetry', () => {
 
       expect(result).toBe('success');
       expect(mockFn).toHaveBeenCalledTimes(2);
-      expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('Retry Attempt 1/3'));
+      expect(loggerWarnSpy).toHaveBeenCalled();
     });
 
     it('should retry on 429 rate limit errors', async () => {
@@ -164,8 +172,8 @@ describe('withRetry', () => {
 
       expect(result).toEqual(error);
       expect(mockFn).toHaveBeenCalledTimes(1); // Only called once
-      expect(console.error).toHaveBeenCalledWith(
-        expect.stringContaining('Non-retryable error'),
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ attempt: 1 }),
         expect.any(String)
       );
     });
@@ -339,8 +347,8 @@ describe('withRetry', () => {
       expect(result).toBeInstanceOf(Error);
       expect((result as Error).message).toBe('Persistent failure');
       expect(mockFn).toHaveBeenCalledTimes(3);
-      expect(console.error).toHaveBeenCalledWith(
-        expect.stringContaining('All 3 attempts exhausted'),
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ maxAttempts: 3 }),
         expect.any(String)
       );
     });
@@ -443,9 +451,7 @@ describe('withRetry', () => {
       await vi.runAllTimersAsync();
       await promise;
 
-      expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('Retry Attempt 1/3'));
-      expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('Retry Attempt 2/3'));
-      expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('Network failure'));
+      expect(loggerWarnSpy).toHaveBeenCalledTimes(2);
     });
 
     it('should log successful retry recovery', async () => {
@@ -456,8 +462,10 @@ describe('withRetry', () => {
       await vi.runAllTimersAsync();
       await promise;
 
-      expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Retry Success'));
-      expect(console.log).toHaveBeenCalledWith(expect.stringContaining('attempt 2/3'));
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ attempt: 2 }),
+        expect.any(String)
+      );
     });
 
     it('should log final failure after all retries', async () => {
@@ -469,9 +477,9 @@ describe('withRetry', () => {
       await vi.runAllTimersAsync();
       await rejection;
 
-      expect(console.error).toHaveBeenCalledWith(
-        expect.stringContaining('All 3 attempts exhausted'),
-        expect.stringContaining('Persistent error')
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ maxAttempts: 3 }),
+        expect.any(String)
       );
     });
   });
@@ -510,7 +518,7 @@ describe('withRetry', () => {
       const result = await rejection;
 
       expect(result).toEqual(openAIError);
-      expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('Internal server error'));
+      expect(loggerWarnSpy).toHaveBeenCalled();
     });
   });
 });

@@ -13,6 +13,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Request, Response, NextFunction } from 'express';
 import { errorHandler, asyncHandler, notFoundHandler } from '../src/api/middleware/error-handler';
+import * as loggerModule from '../src/utils/logger';
 import {
   ValidationError,
   ProcessingError,
@@ -289,19 +290,19 @@ describe('errorHandler', () => {
     it('should log error details', () => {
       const { req, res, next } = createMocks();
       const error = new ValidationError('Test error');
-      const consoleSpy = vi.spyOn(console, 'error');
+      const loggerSpy = vi.spyOn(loggerModule.logger, 'error');
 
       errorHandler(error, req, res, next);
 
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Error caught by error handler'),
+      expect(loggerSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           name: 'ValidationError',
           message: 'Test error',
           code: 'VALIDATION_ERROR',
           path: '/api/test',
           method: 'POST',
-        })
+        }),
+        expect.stringContaining('Error caught by error handler')
       );
     });
 
@@ -311,15 +312,15 @@ describe('errorHandler', () => {
       process.env.NODE_ENV = 'development';
 
       const error = new Error('Test error');
-      const consoleSpy = vi.spyOn(console, 'error');
+      const loggerSpy = vi.spyOn(loggerModule.logger, 'error');
 
       errorHandler(error, req, res, next);
 
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.anything(),
+      expect(loggerSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           stack: expect.any(String),
-        })
+        }),
+        expect.anything()
       );
 
       process.env.NODE_ENV = originalEnv;
@@ -331,15 +332,15 @@ describe('errorHandler', () => {
       process.env.NODE_ENV = 'production';
 
       const error = new Error('Test error');
-      const consoleSpy = vi.spyOn(console, 'error');
+      const loggerSpy = vi.spyOn(loggerModule.logger, 'error');
 
       errorHandler(error, req, res, next);
 
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.anything(),
+      expect(loggerSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           stack: undefined,
-        })
+        }),
+        expect.anything()
       );
 
       process.env.NODE_ENV = originalEnv;
