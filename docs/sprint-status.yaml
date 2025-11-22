@@ -51,7 +51,7 @@ development_status:
   1-8-service-layer-and-dependency-injection: done
   1-9-structured-logging-with-pino: done
   1-10-metrics-collection-with-prometheus: done
-  1-11-health-checks-and-readiness-probes: backlog
+  1-11-health-checks-and-readiness-probes: done
   epic-1-retrospective: optional
 
   # Epic 2: Anonymous Image Processing Pipeline
