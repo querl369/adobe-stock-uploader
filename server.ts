@@ -2,7 +2,7 @@
 // TypeScript version - type-safe and well-documented!
 
 import express, { Request, Response } from 'express';
-import multer, { StorageEngine } from 'multer';
+import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 
@@ -23,6 +23,9 @@ import { logger } from './src/utils/logger';
 
 // Import Prometheus metrics
 import { getMetrics, getMetricsContentType } from './src/utils/metrics';
+
+// Import health routes
+import healthRoutes from './src/api/routes/health.routes';
 
 // Import legacy file utilities (will be refactored in future stories)
 const { renameImages } = require('./src/files-manipulation');
@@ -68,22 +71,19 @@ app.use(express.json());
 // Add correlation ID middleware early (for request tracking)
 app.use(correlationIdMiddleware);
 
+// Register health check routes (should be early, before auth/rate limiting)
+app.use('/health', healthRoutes);
+
 // Serve static files from Vite build
 app.use(express.static('dist'));
 // Serve temporary image files (for OpenAI Vision API access)
 app.use('/temp', express.static(path.join(process.cwd(), 'temp')));
 
-// Configure file upload - saves uploaded images temporarily
-const storage: StorageEngine = multer.diskStorage({
-  destination: 'uploads/',
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + '-' + file.originalname);
-  },
-});
-
+// Configure file upload - uses memory storage for TempUrlService
+// Memory storage allows TempUrlService to compress directly from buffer
+// (Story 1.5: TempUrlService handles compression and disk storage to temp/)
 const upload = multer({
-  storage: storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: config.processing.maxFileSizeMB * 1024 * 1024 }, // Configurable MB limit
 });
 
@@ -100,6 +100,7 @@ const upload = multer({
 
 // Endpoint: Upload images
 // Called when user selects images in the web interface
+// Uses TempUrlService for compression and temporary storage (Story 1.5)
 app.post('/api/upload', upload.single('image'), async (req: Request, res: Response) => {
   try {
     const file = req.file as Express.Multer.File;
@@ -108,12 +109,22 @@ app.post('/api/upload', upload.single('image'), async (req: Request, res: Respon
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    // Return information about uploaded file
+    req.log.info({ originalName: file.originalname, size: file.size }, 'Uploading image');
+
+    // Use TempUrlService to compress and create temporary URL (Story 1.5 AC4 & AC6)
+    const tempUrl = await services.tempUrl.createTempUrl(file);
+    req.log.info({ tempUrl }, 'Created temp URL with compression');
+
+    // Extract UUID from temp URL for response
+    // tempUrl format: http://localhost:3000/temp/{uuid}.jpg
+    const uuid = tempUrl.split('/temp/')[1]?.replace('.jpg', '');
+
+    // Return temp URL info instead of uploads/ path
     const fileInfo: UploadedFile = {
-      id: file.filename,
+      id: uuid,
       name: file.originalname,
       size: file.size,
-      path: file.path,
+      path: `temp/${uuid}.jpg`,
     };
 
     res.json({ success: true, file: fileInfo });
