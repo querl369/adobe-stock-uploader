@@ -19,6 +19,7 @@ import type { ProcessingResult, Metadata, BatchProcessingOptions } from '@/model
 import { ProcessingError } from '@/models/errors';
 import { withRetry } from '@/utils/retry';
 import { logger } from '@/utils/logger';
+import { recordImageSuccess, recordImageFailure, recordTempUrlCreation } from '@/utils/metrics';
 
 /**
  * Service for processing images and generating metadata
@@ -52,10 +53,14 @@ export class ImageProcessingService {
   async processImage(file: Express.Multer.File): Promise<ProcessingResult> {
     const filename = file.originalname;
     let tempUrl: string | null = null;
+    const startTime = Date.now();
 
     try {
       // Step 1: Create temporary URL (compresses and hosts image)
+      const tempUrlStart = Date.now();
       tempUrl = await this.tempUrlService.createTempUrl(file);
+      const tempUrlDuration = (Date.now() - tempUrlStart) / 1000;
+      recordTempUrlCreation(tempUrlDuration);
 
       // Step 2: Generate metadata using AI with retry logic
       const rawMetadata = await withRetry(
@@ -82,7 +87,10 @@ export class ImageProcessingService {
         category: Number(rawMetadata.category),
       };
 
-      // Step 4: Return success result
+      // Step 4: Record success metrics and return result
+      const totalDuration = (Date.now() - startTime) / 1000;
+      recordImageSuccess(totalDuration);
+
       return {
         success: true,
         filename,
@@ -91,6 +99,9 @@ export class ImageProcessingService {
     } catch (error) {
       // Determine error stage and context
       const stage = tempUrl ? 'generate-metadata' : 'create-temp-url';
+
+      // Record failure metrics
+      recordImageFailure(stage);
 
       return {
         success: false,

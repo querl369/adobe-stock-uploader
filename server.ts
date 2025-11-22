@@ -21,6 +21,9 @@ import { correlationIdMiddleware } from './src/api/middleware/correlation-id.mid
 // Import logger
 import { logger } from './src/utils/logger';
 
+// Import Prometheus metrics
+import { getMetrics, getMetricsContentType } from './src/utils/metrics';
+
 // Import legacy file utilities (will be refactored in future stories)
 const { renameImages } = require('./src/files-manipulation');
 
@@ -377,11 +380,27 @@ app.post('/api/cleanup', (req: Request, res: Response) => {
 });
 
 // ============================================
+// Metrics Endpoint
+// ============================================
+
+// Endpoint: Prometheus metrics (unprotected for scraping)
+app.get('/metrics', async (req: Request, res: Response) => {
+  try {
+    const metrics = await getMetrics();
+    res.set('Content-Type', getMetricsContentType());
+    res.send(metrics);
+  } catch (error) {
+    logger.error({ error: error instanceof Error ? error.message : 'Unknown' }, 'Metrics error');
+    res.status(500).send('Error collecting metrics');
+  }
+});
+
+// ============================================
 // SPA Fallback - Serve index.html for all non-API routes
 // ============================================
 
 app.get('*', (req: Request, res: Response) => {
-  if (!req.path.startsWith('/api')) {
+  if (!req.path.startsWith('/api') && !req.path.startsWith('/metrics')) {
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));
   }
 });

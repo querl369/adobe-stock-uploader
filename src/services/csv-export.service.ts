@@ -9,6 +9,7 @@ import { createObjectCsvWriter } from 'csv-writer';
 import type { Metadata } from '@/models/metadata.model';
 import { ProcessingError } from '@/models/errors';
 import { logger } from '@/utils/logger';
+import { recordCsvExport } from '@/utils/metrics';
 
 /**
  * Service for exporting metadata to CSV files
@@ -38,6 +39,8 @@ export class CsvExportService {
    * await csvExportService.generateCSV(metadataList, '/path/to/output.csv');
    */
   async generateCSV(metadataList: Metadata[], outputPath: string): Promise<void> {
+    const startTime = Date.now();
+
     try {
       // Validate input
       if (!metadataList || metadataList.length === 0) {
@@ -63,6 +66,10 @@ export class CsvExportService {
 
       // Write metadata to CSV file
       await csvWriter.writeRecords(metadataList);
+
+      // Record metrics for CSV export
+      const duration = (Date.now() - startTime) / 1000;
+      recordCsvExport(duration, metadataList.length);
 
       logger.info(
         { outputPath, recordCount: metadataList.length },

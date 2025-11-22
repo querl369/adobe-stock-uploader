@@ -12,6 +12,7 @@ import { PROMPT_TEXT } from '@/prompt-text';
 import { ExternalServiceError } from '@/models/errors';
 import { withRetry } from '@/utils/retry';
 import { logger } from '@/utils/logger';
+import { recordOpenAICall, recordOpenAIFailure } from '@/utils/metrics';
 import type { RawAIMetadata } from '@/models/metadata.model';
 
 /**
@@ -38,6 +39,8 @@ export class MetadataService {
    * logger.info({ title: metadata.title, keywords: metadata.keywords }, 'Metadata generated');
    */
   async generateMetadata(imageUrl: string): Promise<RawAIMetadata> {
+    const startTime = Date.now();
+
     try {
       // Wrap OpenAI call with retry logic for resilience
       const response = await withRetry(
@@ -69,6 +72,8 @@ export class MetadataService {
         {
           maxAttempts: 3,
           retryableErrors: err => {
+            // Record retry attempt
+            recordOpenAIFailure(true);
             // Retry on rate limits and server errors
             const status = err?.status || err?.response?.status;
             return status === 429 || (status >= 500 && status < 600);
@@ -78,8 +83,17 @@ export class MetadataService {
 
       // Extract and parse the response
       const responseText = response.choices[0].message.content || '';
-      return this.parseAIResponse(responseText);
+      const parsedMetadata = this.parseAIResponse(responseText);
+
+      // Record successful API call with duration and cost
+      const duration = (Date.now() - startTime) / 1000;
+      recordOpenAICall(duration, 0.002); // $0.002 per image for gpt-5-mini
+
+      return parsedMetadata;
     } catch (error) {
+      // Record failure
+      recordOpenAIFailure(false);
+
       // Transform all errors into ExternalServiceError for consistent handling
       throw new ExternalServiceError('Failed to generate metadata from OpenAI', {
         imageUrl,
