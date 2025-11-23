@@ -21,6 +21,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { AppError, isAppError, RateLimitError } from '../../models/errors';
 import { logger } from '@utils/logger';
+import { config } from '@config/app.config';
 
 /**
  * Main error handling middleware
@@ -59,6 +60,43 @@ export function errorHandler(
     }
 
     return res.status(statusCode).json(response);
+  }
+
+  // Handle Multer-specific errors (Story 2.1: file upload validation)
+  if (err.name === 'MulterError') {
+    const multerError = err as any; // Type assertion for Multer error
+
+    let message = 'File upload error';
+    let statusCode = 400;
+
+    switch (multerError.code) {
+      case 'LIMIT_FILE_SIZE':
+        message = `File too large. Maximum size is ${config.processing.maxFileSizeMB}MB`;
+        statusCode = 413; // Payload Too Large
+        break;
+      case 'LIMIT_FILE_COUNT':
+      case 'LIMIT_UNEXPECTED_FILE':
+        message = 'Too many files. Anonymous users can upload up to 10 images';
+        statusCode = 400;
+        break;
+      case 'LIMIT_PART_COUNT':
+      case 'LIMIT_FIELD_KEY':
+      case 'LIMIT_FIELD_VALUE':
+      case 'LIMIT_FIELD_COUNT':
+        message = 'Invalid upload request format';
+        statusCode = 400;
+        break;
+      default:
+        message = multerError.message || 'File upload error';
+    }
+
+    return res.status(statusCode).json({
+      success: false,
+      error: {
+        code: 'FILE_UPLOAD_ERROR',
+        message,
+      },
+    });
   }
 
   // Handle standard Node.js errors (operational errors we recognize)

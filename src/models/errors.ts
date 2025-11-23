@@ -51,6 +51,7 @@ export class AppError extends Error {
       error: {
         code: this.code,
         message: this.message,
+        statusCode: this.statusCode,
         ...(this.context && { context: this.context }),
       },
     };

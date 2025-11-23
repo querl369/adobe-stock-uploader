@@ -2,6 +2,7 @@
 // TypeScript version - type-safe and well-documented!
 
 import express, { Request, Response } from 'express';
+import cookieParser from 'cookie-parser';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -13,7 +14,10 @@ import { config } from './src/config/app.config';
 import { services } from './src/config/container';
 
 // Import error handling middleware
-import { errorHandler, notFoundHandler } from './src/api/middleware/error-handler';
+import { errorHandler, notFoundHandler, asyncHandler } from './src/api/middleware/error-handler';
+
+// Import typed errors
+import { ValidationError, ProcessingError, NotFoundError } from './src/models/errors';
 
 // Import correlation ID middleware for request tracking
 import { correlationIdMiddleware } from './src/api/middleware/correlation-id.middleware';
@@ -26,6 +30,9 @@ import { getMetrics, getMetricsContentType } from './src/utils/metrics';
 
 // Import health routes
 import healthRoutes from './src/api/routes/health.routes';
+
+// Import upload routes (Story 2.1: Batch Upload API Endpoint)
+import uploadRoutes from './src/api/routes/upload.routes';
 
 // Import legacy file utilities (will be refactored in future stories)
 const { renameImages } = require('./src/files-manipulation');
@@ -68,11 +75,17 @@ const PORT = config.server.port;
 // Middleware - allows receiving JSON data and serving static files
 app.use(express.json());
 
+// Cookie parser middleware (Story 2.2: Session tracking)
+app.use(cookieParser());
+
 // Add correlation ID middleware early (for request tracking)
 app.use(correlationIdMiddleware);
 
 // Register health check routes (should be early, before auth/rate limiting)
 app.use('/health', healthRoutes);
+
+// Register upload routes (Story 2.1: Batch Upload API Endpoint)
+app.use('/api', uploadRoutes);
 
 // Serve static files from Vite build
 app.use(express.static('dist'));
@@ -101,12 +114,16 @@ const upload = multer({
 // Endpoint: Upload images
 // Called when user selects images in the web interface
 // Uses TempUrlService for compression and temporary storage (Story 1.5)
-app.post('/api/upload', upload.single('image'), async (req: Request, res: Response) => {
-  try {
+// Uses asyncHandler and typed errors (Story 1.6 AC8 & AC9)
+app.post(
+  '/api/upload',
+  upload.single('image'),
+  asyncHandler(async (req: Request, res: Response) => {
     const file = req.file as Express.Multer.File;
 
+    // Throw ValidationError for missing file (Story 1.6 AC3 & AC9)
     if (!file) {
-      return res.status(400).json({ error: 'No file uploaded' });
+      throw new ValidationError('No file uploaded');
     }
 
     req.log.info({ originalName: file.originalname, size: file.size }, 'Uploading image');
@@ -127,26 +144,26 @@ app.post('/api/upload', upload.single('image'), async (req: Request, res: Respon
       path: `temp/${uuid}.jpg`,
     };
 
+    // Success response follows Story 1.6 format
     res.json({ success: true, file: fileInfo });
-  } catch (error) {
-    logger.error(
-      { error: error instanceof Error ? error.message : 'Unknown', file: req.file?.originalname },
-      'Upload error'
-    );
-    res.status(500).json({ error: (error as Error).message });
-  }
-});
+
+    // No try-catch needed - asyncHandler catches all errors
+    // Error middleware formats them automatically per Story 1.6 AC9
+  })
+);
 
 // Endpoint: Process a single image
 // Creates temp URL, generates metadata with OpenAI, cleanup is automatic
-app.post('/api/process-image', async (req: Request, res: Response) => {
-  try {
+// Uses asyncHandler and typed errors (Story 1.6 AC8 & AC9)
+app.post(
+  '/api/process-image',
+  asyncHandler(async (req: Request, res: Response) => {
     const { fileId, filename } = req.body;
     const filePath = path.join('uploads', fileId);
 
-    // Check if file exists
+    // Check if file exists - throw NotFoundError (Story 1.6)
     if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'File not found' });
+      throw new NotFoundError('File not found', { fileId, filename });
     }
 
     req.log.info({ filename }, 'Processing image');
@@ -173,28 +190,21 @@ app.post('/api/process-image', async (req: Request, res: Response) => {
     };
 
     res.json(result);
-  } catch (error) {
-    logger.error(
-      { error: error instanceof Error ? error.message : 'Unknown', filename: req.body.filename },
-      'Processing error'
-    );
-    res.status(500).json({
-      success: false,
-      error: (error as Error).message,
-      filename: req.body.filename,
-    } as ProcessResult);
-  }
-});
+  })
+);
 
 // Endpoint: Process multiple images in batch
-app.post('/api/process-batch', async (req: Request, res: Response) => {
-  try {
+// Uses asyncHandler and typed errors (Story 1.6 AC8 & AC9)
+app.post(
+  '/api/process-batch',
+  asyncHandler(async (req: Request, res: Response) => {
     const { initials } = req.body as {
       initials: string;
     };
 
+    // Validate required fields - throw ValidationError (Story 1.6)
     if (!initials) {
-      return res.status(400).json({ error: 'Initials are required' });
+      throw new ValidationError('Initials are required');
     }
 
     const metadataList: Array<{
@@ -220,7 +230,7 @@ app.post('/api/process-batch', async (req: Request, res: Response) => {
     // Check uploads directory
     logger.info('Checking uploads directory');
     if (!fs.existsSync('uploads')) {
-      return res.status(400).json({ error: 'No files uploaded yet. Please upload images first.' });
+      throw new ValidationError('No files uploaded yet. Please upload images first.');
     }
 
     const uploadedFiles = fs
@@ -230,7 +240,7 @@ app.post('/api/process-batch', async (req: Request, res: Response) => {
     logger.info({ count: uploadedFiles.length }, 'Found files in uploads');
 
     if (uploadedFiles.length === 0) {
-      return res.status(400).json({ error: 'No image files found in uploads directory' });
+      throw new ValidationError('No image files found in uploads directory');
     }
 
     // Copy uploaded files to images directory
@@ -322,30 +332,28 @@ app.post('/api/process-batch', async (req: Request, res: Response) => {
       metadataList,
       csvFileName,
     });
-  } catch (error) {
-    logger.error(
-      { error: error instanceof Error ? error.message : 'Unknown' },
-      'Batch processing error'
-    );
-    res.status(500).json({ error: (error as Error).message });
-  }
-});
+  })
+);
 
 // Endpoint: Export metadata to CSV
-app.post('/api/export-csv', async (req: Request, res: Response) => {
-  try {
+// Uses asyncHandler and typed errors (Story 1.6 AC8 & AC9)
+app.post(
+  '/api/export-csv',
+  asyncHandler(async (req: Request, res: Response) => {
     const { csvFileName } = req.body as {
       csvFileName: string;
     };
 
+    // Validate required fields - throw ValidationError (Story 1.6)
     if (!csvFileName) {
-      return res.status(400).json({ error: 'CSV filename is required' });
+      throw new ValidationError('CSV filename is required');
     }
 
     const csvPath = path.join('csv_output', csvFileName);
 
+    // Check if file exists - throw NotFoundError (Story 1.6)
     if (!fs.existsSync(csvPath)) {
-      return res.status(404).json({ error: 'CSV file not found' });
+      throw new NotFoundError('CSV file not found', { csvFileName });
     }
 
     req.log.info({ csvFileName }, 'Downloading CSV');
@@ -356,15 +364,14 @@ app.post('/api/export-csv', async (req: Request, res: Response) => {
         logger.error({ csvFileName, error: err.message }, 'Error downloading CSV');
       }
     });
-  } catch (error) {
-    logger.error({ error: error instanceof Error ? error.message : 'Unknown' }, 'CSV export error');
-    res.status(500).json({ error: (error as Error).message });
-  }
-});
+  })
+);
 
 // Endpoint: Clean up temporary files
-app.post('/api/cleanup', (req: Request, res: Response) => {
-  try {
+// Note: Uses asyncHandler even though not async for consistency (Story 1.6)
+app.post(
+  '/api/cleanup',
+  asyncHandler(async (req: Request, res: Response) => {
     // Clean uploads folder
     const uploadFiles = fs.readdirSync('uploads');
     uploadFiles.forEach(file => {
@@ -384,11 +391,8 @@ app.post('/api/cleanup', (req: Request, res: Response) => {
     });
 
     res.json({ success: true, message: 'Cleanup completed' });
-  } catch (error) {
-    logger.error({ error: error instanceof Error ? error.message : 'Unknown' }, 'Cleanup error');
-    res.status(500).json({ error: (error as Error).message });
-  }
-});
+  })
+);
 
 // ============================================
 // Metrics Endpoint

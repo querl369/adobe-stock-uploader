@@ -10,9 +10,8 @@
  * - Security (no sensitive info in production)
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { Request, Response, NextFunction } from 'express';
-import { errorHandler, asyncHandler, notFoundHandler } from '../src/api/middleware/error-handler';
 import * as loggerModule from '../src/utils/logger';
 import {
   ValidationError,
@@ -22,6 +21,16 @@ import {
   NotFoundError,
   AuthenticationError,
 } from '../src/models/errors';
+
+// Mock config to prevent process.exit during tests
+vi.mock('../src/config/app.config', () => ({
+  config: {
+    server: { port: 3000, nodeEnv: 'test', baseUrl: 'http://localhost:3000' },
+    openai: { apiKey: 'test-key', model: 'gpt-5-mini', maxTokens: 500, temperature: 0.3 },
+    processing: { concurrencyLimit: 5, maxFileSizeMB: 50, tempFileLifetimeSeconds: 10 },
+    rateLimits: { anonymous: 10, freeTier: 100 },
+  },
+}));
 
 // Mock console.error to avoid cluttering test output
 beforeEach(() => {
@@ -46,6 +55,19 @@ function createMocks(path = '/api/test', method = 'POST') {
   return { req, res, next };
 }
 
+// Define variables at module scope
+let errorHandler: any;
+let asyncHandler: any;
+let notFoundHandler: any;
+
+// Load modules after mocks are set up
+beforeAll(async () => {
+  const errorModule = await import('../src/api/middleware/error-handler');
+  errorHandler = errorModule.errorHandler;
+  asyncHandler = errorModule.asyncHandler;
+  notFoundHandler = errorModule.notFoundHandler;
+});
+
 describe('errorHandler', () => {
   describe('AppError handling', () => {
     it('should handle ValidationError with 400 status', () => {
@@ -62,6 +84,7 @@ describe('errorHandler', () => {
         error: {
           code: 'VALIDATION_ERROR',
           message: 'Invalid input',
+          statusCode: 400,
           context: { field: 'email' },
         },
       });
@@ -82,6 +105,7 @@ describe('errorHandler', () => {
         error: {
           code: 'PROCESSING_ERROR',
           message: 'Compression failed',
+          statusCode: 500,
           context: {
             filename: 'image.jpg',
             stage: 'compress',
@@ -105,6 +129,7 @@ describe('errorHandler', () => {
         error: {
           code: 'EXTERNAL_SERVICE_ERROR',
           message: 'OpenAI timeout',
+          statusCode: 502,
           context: {
             service: 'openai',
             statusCode: 504,
@@ -127,6 +152,7 @@ describe('errorHandler', () => {
         error: {
           code: 'NOT_FOUND',
           message: 'File not found',
+          statusCode: 404,
           context: { fileId: 'abc123' },
         },
       });
@@ -144,6 +170,7 @@ describe('errorHandler', () => {
         error: {
           code: 'AUTHENTICATION_ERROR',
           message: 'Invalid token',
+          statusCode: 401,
         },
       });
     });
@@ -162,6 +189,7 @@ describe('errorHandler', () => {
         error: {
           code: 'RATE_LIMIT_ERROR',
           message: 'Rate limit exceeded',
+          statusCode: 429,
           context: { retryAfter: 3600 },
         },
       });
@@ -476,6 +504,7 @@ describe('Integration scenarios', () => {
       error: {
         code: 'PROCESSING_ERROR',
         message: 'Integration test error',
+        statusCode: 500,
         context: {
           filename: 'test.jpg',
           stage: 'compress',

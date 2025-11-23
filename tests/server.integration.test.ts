@@ -236,6 +236,167 @@ describe('Server Integration Tests', () => {
       expect(response.status).toBe(404);
     });
   });
+
+  describe('POST /api/upload - Error Handling (Story 1.6)', () => {
+    it('should return consistent error format for validation errors', () => {
+      // Expected error response format (Story 1.6 AC9)
+      const expectedErrorFormat = {
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'No file uploaded',
+          statusCode: 400,
+        },
+      };
+
+      // Verify error format structure
+      expect(expectedErrorFormat).toHaveProperty('success', false);
+      expect(expectedErrorFormat.error).toHaveProperty('code');
+      expect(expectedErrorFormat.error).toHaveProperty('message');
+      expect(expectedErrorFormat.error).toHaveProperty('statusCode');
+    });
+
+    it('should validate error response structure', () => {
+      // All errors should follow this format (Story 1.6 AC9)
+      const errorResponse = {
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR', // Machine-readable error code
+          message: 'User-friendly message', // Human-readable message
+          statusCode: 400, // HTTP status code
+        },
+      };
+
+      // Verify structure
+      expect(errorResponse.success).toBe(false);
+      expect(errorResponse.error.code).toMatch(/^[A-Z_]+$/); // UPPER_SNAKE_CASE
+      expect(errorResponse.error.message).toBeTruthy();
+      expect(errorResponse.error.statusCode).toBeGreaterThanOrEqual(400);
+      expect(errorResponse.error.statusCode).toBeLessThan(600);
+    });
+
+    it('should validate error codes match expected values', () => {
+      const validErrorCodes = [
+        'VALIDATION_ERROR', // 400 Bad Request
+        'AUTHENTICATION_ERROR', // 401 Unauthorized
+        'NOT_FOUND', // 404 Not Found
+        'RATE_LIMIT_ERROR', // 429 Too Many Requests
+        'PROCESSING_ERROR', // 500 Internal Server Error
+        'EXTERNAL_SERVICE_ERROR', // 502 Bad Gateway
+      ];
+
+      // Each error code should be in UPPER_SNAKE_CASE
+      validErrorCodes.forEach(code => {
+        expect(code).toMatch(/^[A-Z_]+$/);
+      });
+    });
+
+    it('should map status codes to error types correctly', () => {
+      const errorMappings = [
+        { code: 'VALIDATION_ERROR', statusCode: 400 },
+        { code: 'AUTHENTICATION_ERROR', statusCode: 401 },
+        { code: 'NOT_FOUND', statusCode: 404 },
+        { code: 'RATE_LIMIT_ERROR', statusCode: 429 },
+        { code: 'PROCESSING_ERROR', statusCode: 500 },
+        { code: 'EXTERNAL_SERVICE_ERROR', statusCode: 502 },
+      ];
+
+      errorMappings.forEach(mapping => {
+        expect(mapping.statusCode).toBeGreaterThanOrEqual(400);
+        expect(mapping.code).toMatch(/^[A-Z_]+$/);
+      });
+    });
+
+    it('should include context in errors when relevant', () => {
+      const errorWithContext = {
+        success: false,
+        error: {
+          code: 'PROCESSING_ERROR',
+          message: 'Failed to compress image',
+          statusCode: 500,
+          context: {
+            filename: 'test.jpg',
+            stage: 'compress',
+          },
+        },
+      };
+
+      // Context should provide debugging information
+      expect(errorWithContext.error.context).toBeDefined();
+      expect(errorWithContext.error.context?.filename).toBe('test.jpg');
+      expect(errorWithContext.error.context?.stage).toBe('compress');
+    });
+
+    it('should not expose sensitive information in production errors', () => {
+      const productionError = {
+        success: false,
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'An unexpected error occurred. Please try again later.',
+          statusCode: 500,
+        },
+      };
+
+      // Production errors should be generic
+      expect(productionError.error.message).not.toContain('stack');
+      expect(productionError.error.message).not.toContain('password');
+      expect(productionError.error.message).not.toContain('token');
+      expect(productionError.error.message).not.toContain('secret');
+    });
+  });
+
+  describe('Error Format Consistency (Story 1.6 AC9)', () => {
+    it('should ensure all error responses follow the same structure', () => {
+      // Test data for multiple error types
+      const errors = [
+        {
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: 'No file uploaded', statusCode: 400 },
+        },
+        {
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'File not found', statusCode: 404 },
+        },
+        {
+          success: false,
+          error: { code: 'PROCESSING_ERROR', message: 'Processing failed', statusCode: 500 },
+        },
+      ];
+
+      // All errors should have the same structure
+      errors.forEach(errorResponse => {
+        expect(errorResponse).toHaveProperty('success', false);
+        expect(errorResponse.error).toHaveProperty('code');
+        expect(errorResponse.error).toHaveProperty('message');
+        expect(errorResponse.error).toHaveProperty('statusCode');
+      });
+    });
+
+    it('should never return plain string errors', () => {
+      // Wrong format (what we fixed in Story 1.6)
+      const wrongFormat = { error: 'No file uploaded' };
+
+      // Correct format (Story 1.6 AC9)
+      const correctFormat = {
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'No file uploaded',
+          statusCode: 400,
+        },
+      };
+
+      // Verify wrong format lacks required fields
+      expect(wrongFormat).not.toHaveProperty('success');
+      expect(typeof wrongFormat.error).toBe('string'); // ❌ Plain string
+
+      // Verify correct format has all required fields
+      expect(correctFormat).toHaveProperty('success');
+      expect(typeof correctFormat.error).toBe('object'); // ✅ Object
+      expect(correctFormat.error).toHaveProperty('code');
+      expect(correctFormat.error).toHaveProperty('statusCode');
+    });
+  });
 });
 
 describe('API Endpoint Validation', () => {

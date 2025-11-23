@@ -51,6 +51,7 @@ describe('AppError', () => {
       error: {
         code: 'TEST_ERROR',
         message: 'Test error',
+        statusCode: 500,
         context: { filename: 'test.jpg' },
       },
     });
@@ -65,6 +66,7 @@ describe('AppError', () => {
       error: {
         code: 'TEST_ERROR',
         message: 'Test error',
+        statusCode: 500,
       },
     });
   });
