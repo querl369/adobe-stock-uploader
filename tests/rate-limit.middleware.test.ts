@@ -11,7 +11,7 @@
  * - AC6: Bypass mechanism for testing
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, Mock } from 'vitest';
 import { Request, Response, NextFunction } from 'express';
 
 // Mock the logger
@@ -58,8 +58,8 @@ import { sessionService } from '../src/services/session.service';
 import { SessionRequest } from '../src/api/middleware/session.middleware';
 
 describe('Rate Limit Middleware - Story 2.3', () => {
-  // Helper to create mock request
-  const createMockRequest = (overrides: Partial<Request> = {}): Request => {
+  // Helper to create mock request (supports both Request and SessionRequest properties)
+  const createMockRequest = (overrides: Partial<Request & SessionRequest> = {}): Request => {
     return {
       ip: '192.168.1.1',
       socket: { remoteAddress: '192.168.1.1' },
@@ -81,8 +81,8 @@ describe('Rate Limit Middleware - Story 2.3', () => {
     return res as Response;
   };
 
-  // Helper to create mock next function
-  const createMockNext = (): NextFunction => vi.fn();
+  // Helper to create mock next function with proper typing for mock access
+  const createMockNext = (): NextFunction & Mock => vi.fn() as NextFunction & Mock;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -308,7 +308,7 @@ describe('Rate Limit Middleware - Story 2.3', () => {
         }
 
         // Since NODE_ENV is test, all should pass through
-        const errorCalls = next.mock.calls.filter(call => call[0] instanceof Error);
+        const errorCalls = next.mock.calls.filter((call: unknown[]) => call[0] instanceof Error);
         expect(errorCalls.length).toBe(0);
       });
 
@@ -397,7 +397,9 @@ describe('Rate Limit Middleware - Story 2.3', () => {
         ipRateLimitMiddleware(req, res, next);
       }
 
-      const error = next.mock.calls.find(call => call[0] instanceof RateLimitError)?.[0];
+      const error = next.mock.calls.find(
+        (call: unknown[]) => call[0] instanceof RateLimitError
+      )?.[0];
       expect(error).toBeDefined();
       expect(error.statusCode).toBe(429);
     });

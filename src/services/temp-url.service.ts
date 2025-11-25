@@ -6,6 +6,28 @@ import { config } from '@config/app.config';
 import { logger } from '@utils/logger';
 
 /**
+ * Compression result metrics
+ * Story 2.4: Track compression performance for monitoring
+ */
+export interface CompressionMetrics {
+  originalSize: number;
+  compressedSize: number;
+  compressionRatio: number; // percentage saved
+  durationMs: number;
+  originalDimensions: { width: number; height: number };
+  compressedDimensions: { width: number; height: number };
+}
+
+/**
+ * Options for createTempUrl methods
+ * Story 2.4: Support original file deletion after compression
+ */
+export interface TempUrlOptions {
+  /** Delete the original file after successful compression (default: false) */
+  deleteOriginal?: boolean;
+}
+
+/**
  * TempUrlService
  *
  * Manages temporary image URLs for processing pipeline.
@@ -38,26 +60,35 @@ export class TempUrlService {
    * Creates a temporary URL for an uploaded image
    *
    * @param file - Multer uploaded file
+   * @param options - Optional configuration (deleteOriginal, etc.)
    * @returns Public HTTPS URL to the compressed image
    *
    * Process:
    * 1. Generate UUID for unique filename
    * 2. Compress image (1024px max, 85% quality JPEG)
-   * 3. Save to /temp/{uuid}.jpg
-   * 4. Schedule cleanup after configured lifetime
-   * 5. Return public URL
+   * 3. Handle PNG transparency with white background (Story 2.4)
+   * 4. Save to /temp/{uuid}.jpg
+   * 5. Schedule cleanup after configured lifetime
+   * 6. Return public URL
    */
-  async createTempUrl(file: Express.Multer.File): Promise<string> {
+  async createTempUrl(file: Express.Multer.File, options?: TempUrlOptions): Promise<string> {
     const uuid = randomUUID();
     const filename = `${uuid}.jpg`;
     const filepath = path.join(this.tempDir, filename);
+    const startTime = Date.now();
 
     try {
       // Ensure temp directory exists before writing
       await this.ensureTempDirExists();
 
+      // Get original image metadata for metrics
+      const originalMetadata = await sharp(file.buffer).metadata();
+      const originalSize = file.buffer.length;
+
       // Compress image with Sharp
+      // Story 2.4: Add .flatten() for PNG transparency handling (white background)
       await sharp(file.buffer)
+        .flatten({ background: { r: 255, g: 255, b: 255 } }) // Story 2.4: White background for PNG transparency
         .resize(1024, 1024, {
           fit: 'inside',
           withoutEnlargement: true,
@@ -68,6 +99,40 @@ export class TempUrlService {
         })
         .toFile(filepath);
 
+      // Get compressed file metrics
+      const compressedStats = await fs.stat(filepath);
+      const compressedMetadata = await sharp(filepath).metadata();
+      const durationMs = Date.now() - startTime;
+
+      // Story 2.4: Log compression metrics
+      const metrics: CompressionMetrics = {
+        originalSize,
+        compressedSize: compressedStats.size,
+        compressionRatio: Math.round((1 - compressedStats.size / originalSize) * 100),
+        durationMs,
+        originalDimensions: {
+          width: originalMetadata.width || 0,
+          height: originalMetadata.height || 0,
+        },
+        compressedDimensions: {
+          width: compressedMetadata.width || 0,
+          height: compressedMetadata.height || 0,
+        },
+      };
+
+      logger.info(
+        {
+          uuid,
+          originalName: file.originalname,
+          originalSize: `${Math.round(originalSize / 1024)}KB`,
+          compressedSize: `${Math.round(compressedStats.size / 1024)}KB`,
+          compressionRatio: `${metrics.compressionRatio}%`,
+          durationMs,
+          dimensions: `${metrics.originalDimensions.width}x${metrics.originalDimensions.height} → ${metrics.compressedDimensions.width}x${metrics.compressedDimensions.height}`,
+        },
+        'Image compressed successfully'
+      );
+
       // Schedule cleanup after configured lifetime
       this.scheduleCleanup(uuid, this.lifetime);
 
@@ -77,6 +142,14 @@ export class TempUrlService {
     } catch (error) {
       // Clean up partial file if compression fails
       await this.cleanup(uuid).catch(() => {});
+      logger.error(
+        {
+          uuid,
+          originalName: file.originalname,
+          error: error instanceof Error ? error.message : 'Unknown',
+        },
+        'Image compression failed'
+      );
       throw new Error(
         `Failed to create temp URL: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
@@ -87,22 +160,33 @@ export class TempUrlService {
    * Creates a temporary URL from a file path (disk storage)
    *
    * @param filePath - Absolute or relative path to the image file
+   * @param options - Optional configuration (deleteOriginal, etc.)
    * @returns Public HTTPS URL to the compressed image
    *
    * This method is used when files are stored on disk (multer.diskStorage)
    * instead of in memory (multer.memoryStorage)
+   *
+   * Story 2.4: Added PNG transparency handling and original file deletion
    */
-  async createTempUrlFromPath(filePath: string): Promise<string> {
+  async createTempUrlFromPath(filePath: string, options?: TempUrlOptions): Promise<string> {
     const uuid = randomUUID();
     const filename = `${uuid}.jpg`;
     const outputPath = path.join(this.tempDir, filename);
+    const startTime = Date.now();
 
     try {
       // Ensure temp directory exists before writing
       await this.ensureTempDirExists();
 
+      // Get original image metadata for metrics
+      const originalMetadata = await sharp(filePath).metadata();
+      const originalStats = await fs.stat(filePath);
+      const originalSize = originalStats.size;
+
       // Compress image with Sharp (Sharp can read directly from file path)
+      // Story 2.4: Add .flatten() for PNG transparency handling (white background)
       await sharp(filePath)
+        .flatten({ background: { r: 255, g: 255, b: 255 } }) // Story 2.4: White background for PNG transparency
         .resize(1024, 1024, {
           fit: 'inside',
           withoutEnlargement: true,
@@ -113,6 +197,46 @@ export class TempUrlService {
         })
         .toFile(outputPath);
 
+      // Get compressed file metrics
+      const compressedStats = await fs.stat(outputPath);
+      const compressedMetadata = await sharp(outputPath).metadata();
+      const durationMs = Date.now() - startTime;
+
+      // Story 2.4: Log compression metrics
+      const metrics: CompressionMetrics = {
+        originalSize,
+        compressedSize: compressedStats.size,
+        compressionRatio: Math.round((1 - compressedStats.size / originalSize) * 100),
+        durationMs,
+        originalDimensions: {
+          width: originalMetadata.width || 0,
+          height: originalMetadata.height || 0,
+        },
+        compressedDimensions: {
+          width: compressedMetadata.width || 0,
+          height: compressedMetadata.height || 0,
+        },
+      };
+
+      const originalName = path.basename(filePath);
+      logger.info(
+        {
+          uuid,
+          originalName,
+          originalSize: `${Math.round(originalSize / 1024)}KB`,
+          compressedSize: `${Math.round(compressedStats.size / 1024)}KB`,
+          compressionRatio: `${metrics.compressionRatio}%`,
+          durationMs,
+          dimensions: `${metrics.originalDimensions.width}x${metrics.originalDimensions.height} → ${metrics.compressedDimensions.width}x${metrics.compressedDimensions.height}`,
+        },
+        'Image compressed successfully'
+      );
+
+      // Story 2.4: Delete original file after successful compression if requested
+      if (options?.deleteOriginal) {
+        await this.deleteSourceFile(filePath);
+      }
+
       // Schedule cleanup after configured lifetime
       this.scheduleCleanup(uuid, this.lifetime);
 
@@ -122,9 +246,34 @@ export class TempUrlService {
     } catch (error) {
       // Clean up partial file if compression fails
       await this.cleanup(uuid).catch(() => {});
+      logger.error(
+        { uuid, filePath, error: error instanceof Error ? error.message : 'Unknown' },
+        'Image compression from path failed'
+      );
       throw new Error(
         `Failed to create temp URL from path: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
+    }
+  }
+
+  /**
+   * Deletes the source/original file after compression
+   * Story 2.4: Free disk space by removing original uploads
+   *
+   * @param filePath - Path to the original file to delete
+   */
+  async deleteSourceFile(filePath: string): Promise<void> {
+    try {
+      await fs.unlink(filePath);
+      logger.debug({ filePath }, 'Original file deleted after compression');
+    } catch (error) {
+      // Log warning but don't fail - original file might already be deleted
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        logger.warn(
+          { filePath, error: error instanceof Error ? error.message : 'Unknown' },
+          'Failed to delete original file after compression'
+        );
+      }
     }
   }
 
