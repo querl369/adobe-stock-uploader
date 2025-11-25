@@ -9,17 +9,44 @@
  *
  * This service coordinates between TempUrlService, MetadataService,
  * and implements batch processing with concurrency control.
+ *
+ * Story 2.5: Parallel Processing Orchestration
+ * - Uses p-limit for 5 concurrent operations (configurable)
+ * - Progress tracking via callback
+ * - Error recovery with single retry
+ * - 30s timeout per image
  */
 
 import type { Express } from 'express';
+import pLimit from 'p-limit';
 import { config } from '@/config/app.config';
 import { TempUrlService } from './temp-url.service';
 import { MetadataService } from './metadata.service';
-import type { ProcessingResult, Metadata, BatchProcessingOptions } from '@/models/metadata.model';
+import type {
+  ProcessingResult,
+  Metadata,
+  BatchProcessingOptions,
+  BatchProgress,
+} from '@/models/metadata.model';
 import { ProcessingError } from '@/models/errors';
 import { withRetry } from '@/utils/retry';
 import { logger } from '@/utils/logger';
 import { recordImageSuccess, recordImageFailure, recordTempUrlCreation } from '@/utils/metrics';
+
+/**
+ * Internal state for tracking batch processing
+ * Story 2.5: Progress tracking
+ */
+interface BatchState {
+  total: number;
+  completed: number;
+  successful: number;
+  failed: number;
+  processing: number;
+  results: ProcessingResult[];
+  processingTimes: number[];
+  startTime: number;
+}
 
 /**
  * Service for processing images and generating metadata
@@ -123,8 +150,12 @@ export class ImageProcessingService {
   /**
    * Processes multiple images in parallel with concurrency control
    *
-   * Uses p-limit pattern to process 5 images concurrently (default).
-   * Failed images don't block successful ones (graceful degradation).
+   * Story 2.5: Parallel Processing Orchestration
+   * - Uses p-limit for configurable concurrent operations (default: 5)
+   * - Failed images don't block successful ones (graceful degradation)
+   * - Progress updates via onProgress callback
+   * - Error recovery with single retry for recoverable errors
+   * - 30s timeout per image (configurable)
    *
    * @param files - Array of Multer file objects
    * @param options - Optional batch processing options
@@ -134,12 +165,15 @@ export class ImageProcessingService {
    * const results = await imageProcessingService.processBatch(req.files, {
    *   concurrency: 5,
    *   continueOnError: true,
-   *   timeoutMs: 30000
+   *   timeoutMs: 30000,
+   *   retryAttempts: 1,
+   *   onProgress: (progress) => {
+   *     console.log(`Processed ${progress.completed}/${progress.total}`);
+   *   }
    * });
    *
    * const successful = results.filter(r => r.success);
    * const failed = results.filter(r => !r.success);
-   * logger.info({ successCount: successful.length, total: results.length }, 'Batch processing complete');
    */
   async processBatch(
     files: Express.Multer.File[],
@@ -149,6 +183,8 @@ export class ImageProcessingService {
       concurrency = config.processing.concurrencyLimit,
       continueOnError = true,
       timeoutMs = 30000,
+      retryAttempts = 1,
+      onProgress,
     } = options || {};
 
     // Validate input
@@ -156,55 +192,336 @@ export class ImageProcessingService {
       throw new ProcessingError('EMPTY_FILE_LIST', 'Cannot process empty file list', 400);
     }
 
-    logger.info({ count: files.length, concurrency }, 'Starting batch processing');
+    logger.info(
+      { count: files.length, concurrency, timeoutMs, retryAttempts },
+      'Starting parallel batch processing'
+    );
 
-    // For now, implement simple sequential processing
-    // In a future iteration, we can use p-limit for true concurrency control
-    const results: ProcessingResult[] = [];
+    // Story 2.5: Initialize batch state for progress tracking
+    const state: BatchState = {
+      total: files.length,
+      completed: 0,
+      successful: 0,
+      failed: 0,
+      processing: 0,
+      results: [],
+      processingTimes: [],
+      startTime: Date.now(),
+    };
 
-    for (const file of files) {
-      try {
-        // Add timeout wrapper
-        const result = await this.processWithTimeout(file, timeoutMs);
-        results.push(result);
+    // Story 2.5: Create concurrency limiter with p-limit
+    const limit = pLimit(concurrency);
 
-        if (!result.success && !continueOnError) {
-          logger.error({ filename: file.originalname }, 'Processing failed, stopping batch');
-          break;
+    // Report initial progress
+    this.reportProgress(state, onProgress);
+
+    // Story 2.5: Create parallel tasks with concurrency control
+    const tasks = files.map((file, index) =>
+      limit(async () => {
+        // Track that this image is now processing
+        state.processing++;
+        this.reportProgress(state, onProgress, file.originalname);
+
+        const imageStartTime = Date.now();
+        let result: ProcessingResult;
+
+        try {
+          // Story 2.5: Process with retry and timeout
+          result = await this.processWithRetryAndTimeout(file, timeoutMs, retryAttempts);
+        } catch (error) {
+          // Handle unexpected errors (shouldn't happen, but safety net)
+          result = {
+            success: false,
+            filename: file.originalname,
+            error: {
+              code: 'UNEXPECTED_ERROR',
+              message: error instanceof Error ? error.message : 'Unexpected processing error',
+              stage: 'batch-processing',
+            },
+          };
         }
-      } catch (error) {
-        // Handle timeout or unexpected errors
-        results.push({
-          success: false,
-          filename: file.originalname,
-          error: {
-            code: 'PROCESSING_TIMEOUT',
-            message: `Processing exceeded ${timeoutMs}ms timeout`,
-            stage: 'batch-processing',
+
+        // Track processing time for ETA calculation
+        const processingTime = Date.now() - imageStartTime;
+        state.processingTimes.push(processingTime);
+
+        // Update state
+        state.processing--;
+        state.completed++;
+        state.results.push(result);
+
+        if (result.success) {
+          state.successful++;
+        } else {
+          state.failed++;
+        }
+
+        // Report progress after completion
+        this.reportProgress(state, onProgress, undefined);
+
+        logger.debug(
+          {
+            filename: file.originalname,
+            success: result.success,
+            processingTimeMs: processingTime,
+            completed: state.completed,
+            total: state.total,
           },
-        });
+          'Image processing completed'
+        );
 
-        if (!continueOnError) {
-          break;
-        }
-      }
-    }
+        return result;
+      })
+    );
 
-    // Log summary
-    const successful = results.filter(r => r.success).length;
-    const failed = results.length - successful;
-    logger.info({ successful, failed, total: results.length }, 'Batch processing complete');
+    // Story 2.5: Execute all tasks in parallel (respecting concurrency limit)
+    const results = await Promise.all(tasks);
+
+    // Log final summary
+    const totalDuration = Date.now() - state.startTime;
+    const avgTimePerImage =
+      state.processingTimes.length > 0
+        ? Math.round(
+            state.processingTimes.reduce((a, b) => a + b, 0) / state.processingTimes.length
+          )
+        : 0;
+
+    logger.info(
+      {
+        successful: state.successful,
+        failed: state.failed,
+        total: state.total,
+        totalDurationMs: totalDuration,
+        avgTimePerImageMs: avgTimePerImage,
+        concurrency,
+        speedupVsSequential:
+          avgTimePerImage > 0
+            ? ((avgTimePerImage * state.total) / totalDuration).toFixed(2) + 'x'
+            : 'N/A',
+      },
+      'Parallel batch processing complete'
+    );
 
     return results;
   }
 
   /**
-   * Wraps image processing with a timeout
+   * Processes a single image with retry and timeout
+   *
+   * Story 2.5: Error recovery and timeout handling
+   * - Retries recoverable errors (network, 5xx, 429) up to retryAttempts times
+   * - Enforces timeout per image (default 30s)
+   * - Returns failure result instead of throwing on timeout/exhausted retries
+   *
+   * @param file - File to process
+   * @param timeoutMs - Timeout in milliseconds
+   * @param retryAttempts - Number of retry attempts for recoverable errors
+   * @returns Promise resolving to processing result
+   */
+  private async processWithRetryAndTimeout(
+    file: Express.Multer.File,
+    timeoutMs: number,
+    retryAttempts: number
+  ): Promise<ProcessingResult> {
+    const filename = file.originalname;
+    let lastError: Error | undefined;
+
+    // Story 2.5: Retry loop for error recovery
+    for (let attempt = 0; attempt <= retryAttempts; attempt++) {
+      try {
+        // Story 2.5: Timeout handling with Promise.race
+        const result = await Promise.race([
+          this.processImage(file),
+          this.createTimeoutPromise(timeoutMs, filename),
+        ]);
+
+        // If we got a result (success or failure from processImage), return it
+        // Note: processImage never throws, it returns { success: false } on error
+        if (result.success || !this.isRecoverableError(result.error)) {
+          // Success or non-recoverable error - don't retry
+          return result;
+        }
+
+        // Recoverable error - try again if we have attempts left
+        if (attempt < retryAttempts) {
+          logger.warn(
+            {
+              filename,
+              attempt: attempt + 1,
+              maxAttempts: retryAttempts + 1,
+              error: result.error?.message,
+            },
+            'Recoverable error, retrying image processing'
+          );
+
+          // Brief delay before retry
+          await this.delay(1000 * (attempt + 1)); // 1s, 2s, etc.
+          continue;
+        }
+
+        // Out of retries
+        return result;
+      } catch (error) {
+        // This catches timeout errors from Promise.race
+        lastError = error instanceof Error ? error : new Error(String(error));
+
+        if (attempt < retryAttempts && this.isRecoverableException(lastError)) {
+          logger.warn(
+            {
+              filename,
+              attempt: attempt + 1,
+              maxAttempts: retryAttempts + 1,
+              error: lastError.message,
+            },
+            'Caught exception, retrying image processing'
+          );
+
+          await this.delay(1000 * (attempt + 1));
+          continue;
+        }
+      }
+    }
+
+    // All retries exhausted
+    return {
+      success: false,
+      filename,
+      error: {
+        code: 'PROCESSING_FAILED',
+        message: lastError?.message || 'Processing failed after all retries',
+        stage: 'batch-processing',
+        context: { retriesAttempted: retryAttempts },
+      },
+    };
+  }
+
+  /**
+   * Creates a timeout promise for use with Promise.race
+   *
+   * Story 2.5: Timeout handling (30s max per image)
+   *
+   * @param timeoutMs - Timeout in milliseconds
+   * @param filename - Filename for error context
+   * @returns Promise that rejects after timeout
+   */
+  private createTimeoutPromise(timeoutMs: number, filename: string): Promise<ProcessingResult> {
+    return new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`Processing timeout after ${timeoutMs}ms for ${filename}`));
+      }, timeoutMs);
+    });
+  }
+
+  /**
+   * Checks if a processing error is recoverable (should retry)
+   *
+   * Story 2.5: Error recovery
+   * Recoverable: network issues, server errors (5xx), rate limits (429)
+   * Not recoverable: validation errors, auth errors, corrupted files
+   *
+   * @param error - Processing error to check
+   * @returns true if error is recoverable
+   */
+  private isRecoverableError(error?: { code?: string; message?: string; stage?: string }): boolean {
+    if (!error) return false;
+
+    const recoverableCodes = ['NETWORK_ERROR', 'TIMEOUT', 'SERVER_ERROR', 'RATE_LIMITED'];
+    const recoverablePatterns = [
+      /timeout/i,
+      /network/i,
+      /ECONNRESET/i,
+      /ETIMEDOUT/i,
+      /429/,
+      /5\d{2}/,
+    ];
+
+    if (recoverableCodes.includes(error.code || '')) {
+      return true;
+    }
+
+    const message = error.message || '';
+    return recoverablePatterns.some(pattern => pattern.test(message));
+  }
+
+  /**
+   * Checks if an exception is recoverable
+   *
+   * @param error - Exception to check
+   * @returns true if exception is recoverable
+   */
+  private isRecoverableException(error: Error): boolean {
+    const message = error.message || '';
+    const recoverablePatterns = [/timeout/i, /network/i, /ECONNRESET/i, /ETIMEDOUT/i];
+    return recoverablePatterns.some(pattern => pattern.test(message));
+  }
+
+  /**
+   * Reports progress to the onProgress callback
+   *
+   * Story 2.5: Progress tracking
+   *
+   * @param state - Current batch state
+   * @param onProgress - Optional progress callback
+   * @param currentFile - Currently processing file (if any)
+   */
+  private reportProgress(
+    state: BatchState,
+    onProgress?: (progress: BatchProgress) => void,
+    currentFile?: string
+  ): void {
+    if (!onProgress) return;
+
+    // Calculate average processing time and ETA
+    const avgProcessingTimeMs =
+      state.processingTimes.length > 0
+        ? Math.round(
+            state.processingTimes.reduce((a, b) => a + b, 0) / state.processingTimes.length
+          )
+        : 0;
+
+    const remaining = state.total - state.completed;
+    const estimatedTimeRemaining =
+      avgProcessingTimeMs > 0
+        ? Math.round((remaining * avgProcessingTimeMs) / Math.max(1, state.processing || 1))
+        : undefined;
+
+    const progress: BatchProgress = {
+      total: state.total,
+      completed: state.completed,
+      successful: state.successful,
+      failed: state.failed,
+      processing: state.processing,
+      pending: state.total - state.completed - state.processing,
+      currentFile,
+      estimatedTimeRemaining,
+      avgProcessingTimeMs: avgProcessingTimeMs || undefined,
+      results: [...state.results], // Copy to prevent mutation
+    };
+
+    try {
+      onProgress(progress);
+    } catch (error) {
+      logger.warn({ error }, 'Error in onProgress callback');
+    }
+  }
+
+  /**
+   * Delay utility for retry backoff
+   *
+   * @param ms - Milliseconds to delay
+   */
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Wraps image processing with a timeout (legacy method for backwards compatibility)
    *
    * @param file - File to process
    * @param timeoutMs - Timeout in milliseconds
    * @returns Promise resolving to processing result
    * @throws Error if timeout is exceeded
+   * @deprecated Use processWithRetryAndTimeout instead
    */
   private async processWithTimeout(
     file: Express.Multer.File,

@@ -123,6 +123,76 @@ export interface BatchProcessingOptions {
    * @default 30000 (30 seconds)
    */
   timeoutMs?: number;
+
+  /**
+   * Number of retry attempts for failed images (recoverable errors only)
+   * Story 2.5: Error recovery with retry
+   * @default 1
+   */
+  retryAttempts?: number;
+
+  /**
+   * Callback for progress updates during batch processing
+   * Story 2.5: Progress tracking support
+   * @param progress - Current batch progress state
+   */
+  onProgress?: (progress: BatchProgress) => void;
+}
+
+/**
+ * Progress state for batch processing
+ * Story 2.5: Real-time progress tracking
+ */
+export interface BatchProgress {
+  /**
+   * Total number of images in the batch
+   */
+  total: number;
+
+  /**
+   * Number of images completed (success + failed)
+   */
+  completed: number;
+
+  /**
+   * Number of successfully processed images
+   */
+  successful: number;
+
+  /**
+   * Number of failed images
+   */
+  failed: number;
+
+  /**
+   * Number of images currently being processed
+   */
+  processing: number;
+
+  /**
+   * Number of images waiting to be processed
+   */
+  pending: number;
+
+  /**
+   * Name of the current file being processed (if any)
+   */
+  currentFile?: string;
+
+  /**
+   * Estimated time remaining in milliseconds
+   */
+  estimatedTimeRemaining?: number;
+
+  /**
+   * Average processing time per image in milliseconds
+   */
+  avgProcessingTimeMs?: number;
+
+  /**
+   * Results for completed images (available so far)
+   */
+  results: ProcessingResult[];
 }
 
 /**
