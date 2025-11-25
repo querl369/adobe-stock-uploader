@@ -5,12 +5,22 @@
  * Prevents abuse by enforcing upload limits:
  * - Anonymous users: 10 images per session per hour
  * - Per-IP rate limit: 50 requests per minute
+ * - Testing bypass via RATE_LIMIT_BYPASS env variable
  */
 
 import { Request, Response, NextFunction } from 'express';
 import { ValidationError, RateLimitError } from '../../models/errors';
 import { sessionService } from '../../services/session.service';
 import { SessionRequest } from './session.middleware';
+import { logger } from '../../utils/logger';
+
+/**
+ * Check if rate limiting should be bypassed (for testing)
+ * Story 2.3 AC: Add bypass mechanism for testing (environment variable)
+ */
+const isRateLimitBypassed = (): boolean => {
+  return process.env.RATE_LIMIT_BYPASS === 'true' || process.env.NODE_ENV === 'test';
+};
 
 /**
  * Rate limit store for IP-based throttling
@@ -32,9 +42,15 @@ const IP_RATE_WINDOW_MS = 60 * 1000; // 1 minute
 /**
  * IP-based rate limiting middleware
  * Prevents brute force and DoS attacks
+ * Story 2.3 AC: 50 requests per minute per IP
  */
 export const ipRateLimitMiddleware = (req: Request, res: Response, next: NextFunction): void => {
   try {
+    // Bypass rate limiting for tests
+    if (isRateLimitBypassed()) {
+      return next();
+    }
+
     const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
     const now = Date.now();
 
@@ -83,12 +99,18 @@ export const ipRateLimitMiddleware = (req: Request, res: Response, next: NextFun
 /**
  * Session-based upload limit middleware
  * Enforces anonymous user limit: 10 images per session
+ * Story 2.3 AC: Anonymous users: 10 images per IP per hour
  *
  * Must be used AFTER sessionMiddleware
  */
 export const sessionUploadLimitMiddleware = (imageCount: number) => {
   return (req: SessionRequest, res: Response, next: NextFunction): void => {
     try {
+      // Bypass rate limiting for tests
+      if (isRateLimitBypassed()) {
+        return next();
+      }
+
       const sessionId = req.sessionId;
 
       if (!sessionId) {
@@ -149,9 +171,26 @@ export const cleanupIpRateLimits = (): void => {
   }
 
   if (removedCount > 0) {
-    console.log(`Cleaned up ${removedCount} expired IP rate limit entries`);
+    logger.info({ removedCount }, 'Cleaned up expired IP rate limit entries');
   }
 };
 
-// Run cleanup every 5 minutes
-setInterval(cleanupIpRateLimits, 5 * 60 * 1000);
+/**
+ * Get current IP rate limit store size (for testing/monitoring)
+ */
+export const getIpRateLimitStoreSize = (): number => {
+  return ipRateLimits.size;
+};
+
+/**
+ * Clear all IP rate limits (for testing)
+ */
+export const clearIpRateLimits = (): void => {
+  ipRateLimits.clear();
+  logger.debug('IP rate limits cleared');
+};
+
+// Run cleanup every 5 minutes (skip in test environment)
+if (process.env.NODE_ENV !== 'test') {
+  setInterval(cleanupIpRateLimits, 5 * 60 * 1000);
+}
