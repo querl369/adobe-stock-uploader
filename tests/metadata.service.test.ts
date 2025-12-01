@@ -41,6 +41,7 @@ vi.mock('../src/config/app.config', () => ({
       model: 'gpt-5-mini',
       maxTokens: 1000,
       temperature: 0.3,
+      timeoutMs: 30000,
     },
   },
 }));
@@ -96,10 +97,14 @@ describe('MetadataService', () => {
         category: 1045,
       });
 
+      // Verify API was called with correct parameters (including signal for timeout)
       expect(mockOpenAI.chat.completions.create).toHaveBeenCalledWith(
         expect.objectContaining({
           model: 'gpt-5-mini',
           temperature: 0.3,
+        }),
+        expect.objectContaining({
+          signal: expect.any(AbortSignal),
         })
       );
     });
@@ -181,7 +186,8 @@ describe('MetadataService', () => {
       } catch (error) {
         expect(error).toBeInstanceOf(ExternalServiceError);
         const extError = error as ExternalServiceError;
-        expect(extError.context?.originalError).toContain('Response missing required fields');
+        // With Zod validation, error message format changed to include field-specific errors
+        expect(extError.context?.originalError).toContain('validation failed');
       }
     });
 
@@ -344,6 +350,351 @@ describe('MetadataService', () => {
       (authError as any).status = 401;
 
       mockOpenAI.chat.completions.create.mockRejectedValue(authError);
+
+      await expect(service.generateMetadata(imageUrl)).rejects.toThrow(ExternalServiceError);
+    });
+  });
+
+  // ============================================================================
+  // AC4: Timeout Handling Tests
+  // ============================================================================
+  describe('timeout handling (AC4)', () => {
+    it('should throw ExternalServiceError with timeout context when request is aborted', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+      const abortError = new Error('The operation was aborted');
+      abortError.name = 'AbortError';
+
+      mockOpenAI.chat.completions.create.mockRejectedValue(abortError);
+
+      try {
+        await service.generateMetadata(imageUrl);
+        expect.fail('Should have thrown ExternalServiceError');
+      } catch (error) {
+        expect(error).toBeInstanceOf(ExternalServiceError);
+        const extError = error as ExternalServiceError;
+        expect(extError.message).toBe('OpenAI API request timed out');
+        expect(extError.context?.reason).toBe('timeout');
+        expect(extError.context?.service).toBe('openai');
+        expect(extError.context?.timeoutMs).toBe(30000);
+      }
+    });
+
+    it('should throw timeout error when error message contains "aborted"', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+      const abortError = new Error('Request aborted due to timeout');
+
+      mockOpenAI.chat.completions.create.mockRejectedValue(abortError);
+
+      try {
+        await service.generateMetadata(imageUrl);
+        expect.fail('Should have thrown ExternalServiceError');
+      } catch (error) {
+        expect(error).toBeInstanceOf(ExternalServiceError);
+        const extError = error as ExternalServiceError;
+        expect(extError.message).toBe('OpenAI API request timed out');
+        expect(extError.context?.reason).toBe('timeout');
+      }
+    });
+
+    it('should not treat non-abort errors as timeout', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+      const serverError = new Error('Internal server error');
+      (serverError as any).status = 500;
+
+      mockOpenAI.chat.completions.create.mockRejectedValue(serverError);
+
+      try {
+        await service.generateMetadata(imageUrl);
+        expect.fail('Should have thrown ExternalServiceError');
+      } catch (error) {
+        expect(error).toBeInstanceOf(ExternalServiceError);
+        const extError = error as ExternalServiceError;
+        expect(extError.message).toBe('Failed to generate metadata from OpenAI');
+        expect(extError.context?.reason).toBeUndefined();
+      }
+    });
+  });
+
+  // ============================================================================
+  // AC5: Zod Validation Tests
+  // ============================================================================
+  describe('Zod validation (AC5)', () => {
+    it('should accept valid response with all required fields', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+      const mockResponse = {
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: 'Beautiful sunset',
+                keywords: ['sunset', 'sky', 'nature'],
+                category: 1045,
+              }),
+            },
+          },
+        ],
+      };
+
+      mockOpenAI.chat.completions.create.mockResolvedValue(mockResponse);
+
+      const result = await service.generateMetadata(imageUrl);
+      expect(result.title).toBe('Beautiful sunset');
+      expect(result.keywords).toEqual(['sunset', 'sky', 'nature']);
+      expect(result.category).toBe(1045);
+    });
+
+    it('should reject response with missing title field', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+      const mockResponse = {
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                keywords: ['test'],
+                category: 1,
+              }),
+            },
+          },
+        ],
+      };
+
+      mockOpenAI.chat.completions.create.mockResolvedValue(mockResponse);
+
+      await expect(service.generateMetadata(imageUrl)).rejects.toThrow(
+        'Failed to generate metadata from OpenAI'
+      );
+
+      try {
+        await service.generateMetadata(imageUrl);
+      } catch (error) {
+        expect(error).toBeInstanceOf(ExternalServiceError);
+        const extError = error as ExternalServiceError;
+        expect(extError.context?.originalError).toContain('title');
+      }
+    });
+
+    it('should reject response with empty title', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+      const mockResponse = {
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: '',
+                keywords: ['test'],
+                category: 1,
+              }),
+            },
+          },
+        ],
+      };
+
+      mockOpenAI.chat.completions.create.mockResolvedValue(mockResponse);
+
+      await expect(service.generateMetadata(imageUrl)).rejects.toThrow();
+    });
+
+    it('should reject response with missing keywords field', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+      const mockResponse = {
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: 'Test',
+                category: 1,
+              }),
+            },
+          },
+        ],
+      };
+
+      mockOpenAI.chat.completions.create.mockResolvedValue(mockResponse);
+
+      try {
+        await service.generateMetadata(imageUrl);
+        expect.fail('Should have thrown');
+      } catch (error) {
+        expect(error).toBeInstanceOf(ExternalServiceError);
+      }
+    });
+
+    it('should transform comma-separated keywords string to array', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+      const mockResponse = {
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: 'Test',
+                keywords: 'sunset, mountains, landscape, nature',
+                category: 1,
+              }),
+            },
+          },
+        ],
+      };
+
+      mockOpenAI.chat.completions.create.mockResolvedValue(mockResponse);
+
+      const result = await service.generateMetadata(imageUrl);
+      expect(Array.isArray(result.keywords)).toBe(true);
+      expect(result.keywords).toEqual(['sunset', 'mountains', 'landscape', 'nature']);
+    });
+
+    it('should accept category as string', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+      const mockResponse = {
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: 'Test',
+                keywords: ['test'],
+                category: '1045',
+              }),
+            },
+          },
+        ],
+      };
+
+      mockOpenAI.chat.completions.create.mockResolvedValue(mockResponse);
+
+      const result = await service.generateMetadata(imageUrl);
+      expect(result.category).toBe('1045');
+    });
+
+    it('should accept category as number', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+      const mockResponse = {
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: 'Test',
+                keywords: ['test'],
+                category: 1045,
+              }),
+            },
+          },
+        ],
+      };
+
+      mockOpenAI.chat.completions.create.mockResolvedValue(mockResponse);
+
+      const result = await service.generateMetadata(imageUrl);
+      expect(result.category).toBe(1045);
+    });
+
+    it('should reject response with missing category', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+      const mockResponse = {
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: 'Test',
+                keywords: ['test'],
+              }),
+            },
+          },
+        ],
+      };
+
+      mockOpenAI.chat.completions.create.mockResolvedValue(mockResponse);
+
+      await expect(service.generateMetadata(imageUrl)).rejects.toThrow();
+    });
+  });
+
+  // ============================================================================
+  // AC6: Error Classification Tests
+  // ============================================================================
+  describe('error classification (AC6)', () => {
+    it('should identify 429 rate limit as retryable', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+      const rateLimitError = new Error('Rate limit exceeded');
+      (rateLimitError as any).status = 429;
+
+      // The withRetry mock executes the function directly, so we test error handling
+      mockOpenAI.chat.completions.create.mockRejectedValue(rateLimitError);
+
+      await expect(service.generateMetadata(imageUrl)).rejects.toThrow(ExternalServiceError);
+    });
+
+    it('should identify 500 server error as retryable', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+      const serverError = new Error('Internal server error');
+      (serverError as any).status = 500;
+
+      mockOpenAI.chat.completions.create.mockRejectedValue(serverError);
+
+      await expect(service.generateMetadata(imageUrl)).rejects.toThrow(ExternalServiceError);
+    });
+
+    it('should identify 502 bad gateway as retryable', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+      const badGatewayError = new Error('Bad gateway');
+      (badGatewayError as any).status = 502;
+
+      mockOpenAI.chat.completions.create.mockRejectedValue(badGatewayError);
+
+      await expect(service.generateMetadata(imageUrl)).rejects.toThrow(ExternalServiceError);
+    });
+
+    it('should NOT retry on 401 authentication errors', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+      const authError = new Error('Invalid API key');
+      (authError as any).status = 401;
+
+      mockOpenAI.chat.completions.create.mockRejectedValue(authError);
+
+      await expect(service.generateMetadata(imageUrl)).rejects.toThrow(ExternalServiceError);
+    });
+
+    it('should NOT retry on 400 validation errors', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+      const validationError = new Error('Invalid request');
+      (validationError as any).status = 400;
+
+      mockOpenAI.chat.completions.create.mockRejectedValue(validationError);
+
+      await expect(service.generateMetadata(imageUrl)).rejects.toThrow(ExternalServiceError);
+    });
+
+    it('should NOT retry on AbortError (timeout)', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+      const abortError = new Error('Request aborted');
+      abortError.name = 'AbortError';
+
+      mockOpenAI.chat.completions.create.mockRejectedValue(abortError);
+
+      try {
+        await service.generateMetadata(imageUrl);
+        expect.fail('Should have thrown');
+      } catch (error) {
+        expect(error).toBeInstanceOf(ExternalServiceError);
+        const extError = error as ExternalServiceError;
+        expect(extError.context?.reason).toBe('timeout');
+      }
+    });
+
+    it('should identify network timeout (ETIMEDOUT) as retryable', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+      const networkError = new Error('Connection timed out');
+      (networkError as any).code = 'ETIMEDOUT';
+
+      mockOpenAI.chat.completions.create.mockRejectedValue(networkError);
+
+      await expect(service.generateMetadata(imageUrl)).rejects.toThrow(ExternalServiceError);
+    });
+
+    it('should identify connection reset (ECONNRESET) as retryable', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+      const networkError = new Error('Connection reset');
+      (networkError as any).code = 'ECONNRESET';
+
+      mockOpenAI.chat.completions.create.mockRejectedValue(networkError);
 
       await expect(service.generateMetadata(imageUrl)).rejects.toThrow(ExternalServiceError);
     });

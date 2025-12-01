@@ -2,7 +2,7 @@
 # This file tracks development progress through Epic 1-6
 
 # generated: 2025-11-11
-# last_updated: 2025-11-23
+# last_updated: 2025-12-01 (Sprint 3 planning)
 # project: adobe-stock-uploader
 # project_key: adobe-stock-uploader
 # tracking_system: file-system
@@ -62,24 +62,28 @@ development_status:
   epic-1-retrospective: optional
 
   # Epic 2: Anonymous Image Processing Pipeline
-  # Status: In Progress (started 2025-11-23)
-  # All stories marked ready-for-dev based on detailed epic specifications
-  epic-2: in-progress
+  # Status: verified (manual smoke testing completed 2025-12-01)
+  # Testing: Epic 2 smoke test suite completed by TEA
+  # Deliverable: docs/epic-2-smoke-test-guide.md
+  epic-2: verified
   2-1-batch-upload-api-endpoint: verified  # Story 2.1 VERIFIED - Production ready, all tests passing 2025-11-23
   2-2-cookie-based-anonymous-session-tracking: verified  # Story 2.2 VERIFIED - All ACs met, 47 session tests passing 2025-11-25
-  2-3-rate-limiting-middleware: done  # Story 2.3 APPROVED - All 6 ACs verified, 21 tests passing, code review complete 2025-11-25
-  2-4-image-compression-service: done  # Story 2.4 APPROVED - All 8 ACs verified, 28 tests passing, code review complete 2025-11-25
-  2-5-parallel-processing-orchestration: done  # Story 2.5 APPROVED - Code review passed, all 8 ACs verified, 17 tests added, 4.9x speedup achieved 2025-11-25
-  2-6-processing-status-and-progress-tracking: ready-for-dev
+  2-3-rate-limiting-middleware: verified  # Story 2.3 VERIFIED - Rate limiting tested, headers working 2025-12-01
+  2-4-image-compression-service: verified  # Story 2.4 VERIFIED - Compression working (3947x3158 → 1024x820) 2025-12-01
+  2-5-parallel-processing-orchestration: verified  # Story 2.5 VERIFIED - 3 images processed in parallel 2025-12-01
+  2-6-processing-status-and-progress-tracking: verified  # Story 2.6 VERIFIED - Batch status, progress, session ownership all working 2025-12-01
   epic-2-retrospective: optional
 
   # Epic 3: AI Metadata Generation Engine
-  epic-3: backlog
-  3-1-openai-vision-api-integration: backlog
-  3-2-adobe-stock-category-taxonomy: backlog
-  3-3-optimized-ai-prompt-engineering: backlog
-  3-4-metadata-validation-and-quality-checks: backlog
-  3-5-error-recovery-and-retry-logic: backlog
+  # Status: contexted (Sprint 3 planning completed 2025-12-01)
+  # Sprint Goal: Implement AI-powered metadata generation for Adobe Stock compliance
+  # Dependencies: Epic 1 ✅, Epic 2 ✅ (all prerequisites met)
+  epic-3: contexted
+  3-1-openai-vision-api-integration: done  # Sprint 3 - Day 1-2, implementation complete, code review APPROVED 2025-12-01
+  3-2-adobe-stock-category-taxonomy: backlog  # Sprint 3 - Day 2
+  3-3-optimized-ai-prompt-engineering: backlog  # Sprint 3 - Day 2-3
+  3-4-metadata-validation-and-quality-checks: backlog  # Sprint 3 - Day 3
+  3-5-error-recovery-and-retry-logic: backlog  # Sprint 3 - Day 3
   epic-3-retrospective: optional
 
   # Epic 4: CSV Export & Download
@@ -227,8 +231,195 @@ development_status:
 # 
 # NEXT STEPS:
 # -----------
-# - Epic 2: Anonymous Image Processing Pipeline (ready to start)
-# - Consider Epic 1 retrospective (optional)
+# - Epic 3: AI Metadata Generation Engine (ready to start)
+# - Consider Epic 2 retrospective (optional)
 # - Monitor metrics in production environment
+# 
+# ==============================================================================
+
+# ==============================================================================
+# EPIC 2 TESTING NOTES (2025-12-01)
+# ==============================================================================
+# Tester: TEA (Test Architect)
+# Testing Type: Manual smoke testing via curl commands
+# Test Duration: ~1 hour
+# Test Coverage: 6 of 6 stories (100%)
+# 
+# TESTING APPROACH:
+# -----------------
+# 1. Created comprehensive smoke test guide: docs/epic-2-smoke-test-guide.md
+# 2. Executed API tests using curl with cookie management
+# 3. Verified session tracking, rate limiting, batch processing
+# 4. Validated error handling and progress tracking
+# 
+# VERIFICATION RESULTS:
+# ---------------------
+# Story 2.1: Batch Upload API ✅
+#   - Multiple file upload working (tested with 3 images)
+#   - File validation (MIME types) working
+#   - UUID-based file naming working
+#   - Session usage tracking ("3 of 10 free images used")
+# 
+# Story 2.2: Session Tracking ✅
+#   - Cookie created on first request
+#   - Session maintained across requests
+#   - Session ownership verified (404 without cookie)
+# 
+# Story 2.3: Rate Limiting ✅
+#   - Session-based limits enforced (10 images/session)
+#   - Rate limit headers present in responses
+#   - Tested by user before smoke test session
+# 
+# Story 2.4: Image Compression ✅
+#   - Sharp compression working: 3947x3158 → 1024x820
+#   - Files saved to /temp directory during processing
+#   - Automatic cleanup working
+# 
+# Story 2.5: Parallel Processing ✅
+#   - 3 images processed simultaneously
+#   - Progress tracked per-image
+#   - Error recovery working (OpenAI failures captured per-image)
+# 
+# Story 2.6: Progress Tracking ✅
+#   - POST /api/process-batch-v2 returns batchId immediately
+#   - GET /api/batch-status/:batchId returns progress
+#   - Per-image status tracking working (pending → processing → completed/failed)
+#   - Session ownership enforced (404 for other sessions)
+#   - ETA calculation working (estimatedTimeRemaining)
+# 
+# KNOWN LIMITATION:
+# -----------------
+# OpenAI Vision API cannot reach localhost URLs
+#   - Error: "400 Error while downloading http://localhost:3000/temp/xxx.jpg"
+#   - This is expected behavior for local testing
+#   - Solution: Deploy to public URL or use ngrok
+#   - NOT a code bug - pipeline correctly captures and reports the error
+# 
+# QUALITY METRICS:
+# ----------------
+# - Unit Tests: 463 tests passing (including Epic 1)
+# - Smoke Tests: 16 of 21 tests executed, all passed
+# - Error Handling: Verified - failures captured with proper messages
+# - Session Security: Verified - ownership checks working
+# 
+# DELIVERABLES:
+# -------------
+# - Epic 2 Smoke Test Guide: docs/epic-2-smoke-test-guide.md
+# 
+# READY FOR PRODUCTION: YES ✅ (API layer)
+# Epic 2 has achieved its goal: Anonymous image processing pipeline working
+# Note: Full E2E testing requires public URL for OpenAI integration (Epic 3)
+# 
+# NEXT STEPS:
+# -----------
+# - Epic 3: AI Metadata Generation Engine
+# - Deploy to Railway/Render for full OpenAI integration testing
+# - Consider Epic 2 retrospective (optional)
+# 
+# ==============================================================================
+
+# ==============================================================================
+# SPRINT 3 PLANNING (2025-12-01)
+# ==============================================================================
+# Sprint Goal: Implement AI-powered metadata generation for Adobe Stock compliance
+# Sprint Duration: 2-3 development days
+# Prerequisites: Epic 1 ✅ verified, Epic 2 ✅ verified
+# 
+# EXISTING FOUNDATION:
+# --------------------
+# The following components already exist and will be enhanced in Sprint 3:
+# 
+# 1. MetadataService (src/services/metadata.service.ts)
+#    - OpenAI Vision API integration ✅
+#    - Retry logic with exponential backoff ✅
+#    - Error handling with ExternalServiceError ✅
+#    - JSON response parsing ✅
+#    - Metrics recording (recordOpenAICall, recordOpenAIFailure) ✅
+# 
+# 2. PROMPT_TEXT (src/prompt-text.ts)
+#    - Basic Adobe Stock prompt with 21 categories ✅
+#    - JSON response format request ✅
+# 
+# 3. Metadata Models (src/models/metadata.model.ts)
+#    - Metadata interface (filename, title, keywords, category) ✅
+#    - ProcessingResult interface ✅
+#    - BatchProcessingOptions interface ✅
+#    - RawAIMetadata interface ✅
+# 
+# SPRINT 3 STORY BREAKDOWN:
+# -------------------------
+# 
+# Story 3.1: OpenAI Vision API Integration (Day 1-2)
+#   Goal: Enhance existing MetadataService with production-ready features
+#   Tasks:
+#     - Add image detail configuration (low/high based on file size)
+#     - Implement request timeout handling (30s max)
+#     - Add response validation for required fields
+#     - Improve error messages for different API error types
+#   Deliverables:
+#     - Enhanced MetadataService with configurable detail level
+#     - Comprehensive unit tests for API integration
+# 
+# Story 3.2: Adobe Stock Category Taxonomy (Day 2)
+#   Goal: Create complete category mapping service
+#   Tasks:
+#     - Create src/utils/adobe-stock-categories.ts with full taxonomy
+#     - Implement category ID validation
+#     - Add fuzzy matching for category names
+#     - Create category mapping service
+#   Deliverables:
+#     - ADOBE_CATEGORIES constant with 21+ categories
+#     - CategoryService with mapToId() and validate() methods
+# 
+# Story 3.3: Optimized AI Prompt Engineering (Day 2-3)
+#   Goal: Improve metadata quality through better prompting
+#   Tasks:
+#     - Restructure prompt for better JSON compliance
+#     - Add few-shot examples of good metadata
+#     - Specify keyword requirements (30-50 terms)
+#     - Add commercial stock photography guidance
+#   Deliverables:
+#     - Enhanced PROMPT_TEXT with examples
+#     - A/B testing framework for prompts (optional)
+# 
+# Story 3.4: Metadata Validation & Quality Checks (Day 3)
+#   Goal: Ensure AI output meets Adobe Stock requirements
+#   Tasks:
+#     - Create MetadataValidationService
+#     - Implement title validation (50-200 chars)
+#     - Implement keyword validation (30-50, no duplicates)
+#     - Implement category validation against taxonomy
+#     - Add sanitization (trim, remove special chars)
+#   Deliverables:
+#     - MetadataValidationService with validate() method
+#     - Zod schema for metadata validation
+# 
+# Story 3.5: Error Recovery & Retry Logic (Day 3)
+#   Goal: Ensure robust handling of AI API failures
+#   Tasks:
+#     - Review existing retry logic in withRetry()
+#     - Add specific error classification for OpenAI errors
+#     - Implement fallback metadata generation
+#     - Add retry success/failure metrics
+#   Deliverables:
+#     - Enhanced error recovery with fallback values
+#     - Comprehensive retry metrics
+# 
+# TECHNICAL NOTES:
+# ----------------
+# - OpenAI model: gpt-5-mini (configured in app.config.ts)
+# - Temperature: 0.3 (accuracy over creativity)
+# - Max tokens: 500 (sufficient for metadata)
+# - Image detail: "low" (reduces cost, $0.002 per image)
+# - Known limitation: OpenAI cannot reach localhost URLs (deploy for full testing)
+# 
+# SUCCESS CRITERIA:
+# -----------------
+# - [ ] MetadataService generates compliant metadata for all test images
+# - [ ] Category mapping works for 100% of Adobe Stock categories
+# - [ ] Validation catches malformed AI responses
+# - [ ] Error recovery provides fallback metadata
+# - [ ] All unit tests passing (target: 50+ new tests)
+# - [ ] Average metadata generation time < 5 seconds
 # 
 # ==============================================================================

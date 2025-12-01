@@ -15,6 +15,7 @@ const envSchema = z.object({
   OPENAI_MODEL: z.string().default('gpt-5-mini'),
   OPENAI_MAX_TOKENS: z.coerce.number().default(1000),
   OPENAI_TEMPERATURE: z.coerce.number().default(0.3),
+  OPENAI_TIMEOUT_MS: z.coerce.number().default(30000),
 
   // Processing
   CONCURRENCY_LIMIT: z.coerce.number().default(5),
@@ -65,6 +66,7 @@ class ConfigService {
       model: this.config.OPENAI_MODEL,
       maxTokens: this.config.OPENAI_MAX_TOKENS,
       temperature: this.config.OPENAI_TEMPERATURE,
+      timeoutMs: this.config.OPENAI_TIMEOUT_MS,
     };
   }
 

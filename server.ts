@@ -34,6 +34,9 @@ import healthRoutes from './src/api/routes/health.routes';
 // Import upload routes (Story 2.1: Batch Upload API Endpoint)
 import uploadRoutes from './src/api/routes/upload.routes';
 
+// Import batch routes (Story 2.6: Processing Status & Progress Tracking)
+import batchRoutes from './src/api/routes/batch.routes';
+
 // Import legacy file utilities (will be refactored in future stories)
 const { renameImages } = require('./src/files-manipulation');
 
@@ -86,6 +89,9 @@ app.use('/health', healthRoutes);
 
 // Register upload routes (Story 2.1: Batch Upload API Endpoint)
 app.use('/api', uploadRoutes);
+
+// Register batch routes (Story 2.6: Processing Status & Progress Tracking)
+app.use('/api', batchRoutes);
 
 // Serve static files from Vite build
 app.use(express.static('dist'));

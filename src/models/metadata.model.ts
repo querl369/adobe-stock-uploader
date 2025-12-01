@@ -5,6 +5,8 @@
  * These models are used throughout the application for type safety and consistency.
  */
 
+import { z } from 'zod';
+
 /**
  * Image metadata structure for Adobe Stock CSV export
  *
@@ -204,3 +206,47 @@ export interface RawAIMetadata {
   keywords: string[];
   category: number | string;
 }
+
+/**
+ * Zod schema for validating raw AI metadata responses (AC5)
+ *
+ * Handles flexible AI responses:
+ * - title: Must be non-empty string
+ * - keywords: Can be array of strings OR comma-separated string (transformed to array)
+ * - category: Can be number OR string (e.g., "1045" or 1045)
+ *
+ * @example
+ * const result = rawAIMetadataSchema.safeParse(aiResponse);
+ * if (!result.success) throw new Error('Invalid AI response');
+ */
+export const rawAIMetadataSchema = z.object({
+  title: z
+    .string({ required_error: 'title field is required' })
+    .min(1, 'title must be a non-empty string'),
+
+  keywords: z
+    .union([
+      z.array(z.string()).min(1, 'keywords array must not be empty'),
+      z.string().min(1, 'keywords string must not be empty'),
+    ])
+    .transform(val => {
+      // Transform comma-separated string to array if needed
+      if (typeof val === 'string') {
+        return val
+          .split(',')
+          .map(k => k.trim())
+          .filter(k => k.length > 0);
+      }
+      return val;
+    }),
+
+  category: z.union([
+    z.number(),
+    z.string().min(1, 'category must be a non-empty string or number'),
+  ]),
+});
+
+/**
+ * Type inferred from Zod schema for type-safe validation results
+ */
+export type ValidatedRawAIMetadata = z.infer<typeof rawAIMetadataSchema>;
