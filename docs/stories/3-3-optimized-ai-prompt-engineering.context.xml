@@ -1,0 +1,217 @@
+<story-context id="3-3-optimized-ai-prompt-engineering" v="1.0">
+  <metadata>
+    <epicId>3</epicId>
+    <storyId>3</storyId>
+    <title>Optimized AI Prompt Engineering</title>
+    <status>drafted</status>
+    <generatedAt>2025-12-05</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/stories/3-3-optimized-ai-prompt-engineering.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>system</asA>
+    <iWant>a carefully engineered prompt that produces accurate, Adobe Stock-compliant metadata</iWant>
+    <soThat>users get high-quality results that pass Adobe's requirements and maximize stock photo sales</soThat>
+    <tasks>
+      <task id="1">Analyze current prompt and document specific improvements needed (AC1-AC6)</task>
+      <task id="2">Create new prompt structure with clear sections
+        <subtask>Add JSON schema definition section (AC1)</subtask>
+        <subtask>Update title requirements to 50-200 chars (AC2)</subtask>
+        <subtask>Update keyword requirements to 30-50 terms (AC3)</subtask>
+        <subtask>Add keyword diversity guidance (AC3)</subtask>
+      </task>
+      <task id="3">Add few-shot examples (AC4)
+        <subtask>Create "People/Business" category example</subtask>
+        <subtask>Create "Landscape/Nature" category example</subtask>
+        <subtask>Ensure examples demonstrate all guidelines</subtask>
+      </task>
+      <task id="4">Add commercial stock photography guidance (AC5)
+        <subtask>Include buyer-focused language</subtask>
+        <subtask>Add searchability optimization tips</subtask>
+      </task>
+      <task id="5">Refine category selection instructions (AC6)
+        <subtask>Emphasize returning category as NUMBER</subtask>
+        <subtask>Add guidance for similar category disambiguation</subtask>
+      </task>
+      <task id="6">Update src/prompt-text.ts with enhanced prompt</task>
+      <task id="7">Run existing metadata service tests to verify no regressions</task>
+      <task id="8">Add unit tests for prompt structure validation (AC7)</task>
+      <task id="9">Test with real images to validate improved output quality</task>
+      <task id="10">Update sprint-status.yaml to "review"</task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1" title="Restructured Prompt for JSON Compliance">
+      Use clear system/user message separation pattern; explicitly define JSON response schema with required fields; specify exact field types (string for title, array for keywords, number for category); include format enforcement instructions; request structured output mode.
+    </criterion>
+    <criterion id="AC2" title="Adobe Stock Title Requirements">
+      Descriptive, searchable titles (50-200 characters); keyword-rich language optimized for stock photo search; NO commas or special characters that break CSV export; focus on commercial/editorial usefulness; describe WHO, WHAT, WHERE when applicable.
+    </criterion>
+    <criterion id="AC3" title="Enhanced Keyword Requirements (30-50 Terms)">
+      Quantity: 30-50 relevant keywords (NOT 25); diversity requirements include main subject/objects, colors, mood/emotion descriptors, industry/use case keywords, technical descriptors, seasonal/temporal, location/cultural context; quality requirements include no duplicates, ordered by relevance, single words or simple phrases.
+    </criterion>
+    <criterion id="AC4" title="Few-Shot Examples">
+      At least 2 high-quality example image descriptions with corresponding metadata; examples covering different category types (e.g., People, Landscape); demonstration of proper title formatting, diverse keyword arrays, and correct category selection.
+    </criterion>
+    <criterion id="AC5" title="Commercial Stock Photography Guidance">
+      Emphasize commercial licensing considerations; distinguish editorial vs commercial use; keywords that appeal to designers, marketers, advertisers; avoid overly artistic/poetic descriptions; focus on utility and searchability over creativity.
+    </criterion>
+    <criterion id="AC6" title="Category Selection Precision">
+      List all 21 categories with clear descriptions; request category as NUMBER (not name) to reduce mapping errors; provide guidance on distinguishing similar categories; emphasize selecting the MOST specific applicable category.
+    </criterion>
+    <criterion id="AC7" title="Unit Tests for Prompt Structure">
+      Prompt includes all required sections; prompt specifies 30-50 keyword range; prompt includes at least 2 examples; prompt requests JSON format; integration test validating MetadataService still works with new prompt.
+    </criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/epics.md</path>
+        <title>Epic Breakdown</title>
+        <section>Story 3.3: Optimized AI Prompt Engineering</section>
+        <snippet>Story requirements: restructure prompt for better JSON compliance, add few-shot examples, specify 30-50 keywords, add commercial stock photography guidance.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture/architecture-api.md</path>
+        <title>Backend Architecture - Express API</title>
+        <section>Target State Architecture</section>
+        <snippet>Layered architecture with service layer pattern. MetadataService handles AI-powered metadata generation using OpenAI Vision API.</snippet>
+      </doc>
+      <doc>
+        <path>docs/stories/3-2-adobe-stock-category-taxonomy.md</path>
+        <title>Story 3.2 - Adobe Stock Category Taxonomy</title>
+        <section>Dev Agent Record</section>
+        <snippet>CategoryService now validates and maps AI-generated categories. 180+ aliases for fuzzy matching. Zod validation handles flexible keyword responses.</snippet>
+      </doc>
+      <doc>
+        <path>docs/stories/3-1-openai-vision-api-integration.context.xml</path>
+        <title>Story 3.1 Context - OpenAI Vision API Integration</title>
+        <section>Implementation Context</section>
+        <snippet>MetadataService patterns established. Zod schema rawAIMetadataSchema validates title, keywords (array or string), and category (number or string).</snippet>
+      </doc>
+    </docs>
+
+    <code>
+      <file>
+        <path>src/prompt-text.ts</path>
+        <kind>prompt</kind>
+        <symbol>PROMPT_TEXT</symbol>
+        <lines>1-29</lines>
+        <reason>PRIMARY TARGET: Current prompt to be enhanced. Contains 21 categories, requests 25 keywords (should be 30-50), title 70 chars (should be 50-200).</reason>
+      </file>
+      <file>
+        <path>src/services/metadata.service.ts</path>
+        <kind>service</kind>
+        <symbol>MetadataService</symbol>
+        <lines>1-307</lines>
+        <reason>Consumer of PROMPT_TEXT. Uses prompt in generateMetadata() method with OpenAI Vision API. parseAIResponse() validates JSON output with Zod schema.</reason>
+      </file>
+      <file>
+        <path>src/models/metadata.model.ts</path>
+        <kind>model</kind>
+        <symbol>rawAIMetadataSchema, RawAIMetadata</symbol>
+        <lines>203-253</lines>
+        <reason>Zod schema that validates AI responses. Accepts title (string), keywords (array or comma-string), category (number or string). Enhanced prompt output must pass this validation.</reason>
+      </file>
+      <file>
+        <path>src/utils/adobe-stock-categories.ts</path>
+        <kind>utility</kind>
+        <symbol>ADOBE_STOCK_CATEGORIES, CATEGORY_ALIASES</symbol>
+        <lines>1-338</lines>
+        <reason>Complete taxonomy of 21 categories with 180+ aliases. Use for reference when writing category descriptions in prompt. CategoryService handles mapping.</reason>
+      </file>
+      <file>
+        <path>src/services/category.service.ts</path>
+        <kind>service</kind>
+        <symbol>CategoryService</symbol>
+        <lines>1-232</lines>
+        <reason>Maps and validates AI-generated categories. Has toValidCategoryId() that handles both number and string responses. Provides fallback to category 1.</reason>
+      </file>
+      <file>
+        <path>tests/metadata.service.test.ts</path>
+        <kind>test</kind>
+        <symbol>MetadataService tests</symbol>
+        <lines>1-769</lines>
+        <reason>Existing test suite for MetadataService. Must ensure no regressions after prompt changes. Follow patterns for new prompt tests.</reason>
+      </file>
+    </code>
+
+    <dependencies>
+      <node>
+        <package name="openai" version="^6.8.1" purpose="OpenAI SDK for Vision API calls" />
+        <package name="zod" version="^4.1.12" purpose="Schema validation for AI responses" />
+        <package name="vitest" version="^4.0.8" purpose="Testing framework" />
+        <package name="typescript" version="^5.8.2" purpose="Type safety" />
+      </node>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="architecture">
+      Prompt lives in src/prompt-text.ts - do NOT move to services or utils. MetadataService imports PROMPT_TEXT directly.
+    </constraint>
+    <constraint type="compatibility">
+      Enhanced prompt output MUST pass rawAIMetadataSchema validation. Keywords can be array OR comma-string, category can be number OR string.
+    </constraint>
+    <constraint type="backwards-compatibility">
+      MetadataService.generateMetadata() API must remain unchanged. Only prompt content changes, no signature changes.
+    </constraint>
+    <constraint type="testing">
+      All existing 769+ metadata.service tests must pass. Add new tests for prompt structure validation.
+    </constraint>
+    <constraint type="category-handling">
+      CategoryService handles category mapping post-response. Prompt should request NUMBER (1-21) but service handles string fallback gracefully.
+    </constraint>
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>PROMPT_TEXT</name>
+      <kind>constant export</kind>
+      <signature>export const PROMPT_TEXT: string</signature>
+      <path>src/prompt-text.ts</path>
+    </interface>
+    <interface>
+      <name>MetadataService.generateMetadata</name>
+      <kind>method</kind>
+      <signature>async generateMetadata(imageUrl: string): Promise&lt;RawAIMetadata&gt;</signature>
+      <path>src/services/metadata.service.ts:50</path>
+    </interface>
+    <interface>
+      <name>rawAIMetadataSchema</name>
+      <kind>zod schema</kind>
+      <signature>z.object({ title: z.string(), keywords: z.union([z.array(), z.string()]).transform(), category: z.union([z.number(), z.string()]) })</signature>
+      <path>src/models/metadata.model.ts:222</path>
+    </interface>
+    <interface>
+      <name>RawAIMetadata</name>
+      <kind>interface</kind>
+      <signature>interface RawAIMetadata { title: string; keywords: string[]; category: number | string; }</signature>
+      <path>src/models/metadata.model.ts:204</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Vitest 4.0.8 testing framework with vi.mock for dependencies. Tests use describe/it pattern with expect assertions. Mock OpenAI module, config, retry utility, logger, and metrics. CategoryService is now injected as dependency in MetadataService constructor.
+    </standards>
+    <locations>
+      <location>tests/*.test.ts</location>
+      <location>tests/metadata.service.test.ts (primary - 769 lines)</location>
+      <location>tests/category.service.test.ts (136 tests for category mapping)</location>
+    </locations>
+    <ideas>
+      <idea ac="AC1">Test prompt contains JSON schema definition section</idea>
+      <idea ac="AC2">Test prompt specifies title length 50-200 characters</idea>
+      <idea ac="AC3">Test prompt specifies 30-50 keyword requirement</idea>
+      <idea ac="AC4">Test prompt contains at least 2 few-shot examples</idea>
+      <idea ac="AC5">Test prompt contains commercial stock photography guidance keywords</idea>
+      <idea ac="AC6">Test prompt lists all 21 categories and requests NUMBER format</idea>
+      <idea ac="AC7">Integration test: MetadataService.generateMetadata() with new prompt produces valid RawAIMetadata</idea>
+      <idea ac="AC7">Regression test: All existing metadata.service.test.ts tests still pass</idea>
+    </ideas>
+  </tests>
+</story-context>

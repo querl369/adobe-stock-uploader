@@ -15,17 +15,25 @@ import { logger } from '@/utils/logger';
 import { recordOpenAICall, recordOpenAIFailure } from '@/utils/metrics';
 import type { RawAIMetadata } from '@/models/metadata.model';
 import { rawAIMetadataSchema } from '@/models/metadata.model';
+import type { CategoryService } from '@/services/category.service';
 
 /**
  * Service for generating image metadata using AI
  */
 export class MetadataService {
   private openai: OpenAI;
+  private categoryService: CategoryService;
 
-  constructor() {
+  /**
+   * Creates a new MetadataService instance
+   *
+   * @param categoryService - Service for mapping and validating Adobe Stock categories
+   */
+  constructor(categoryService: CategoryService) {
     this.openai = new OpenAI({
       apiKey: config.openai.apiKey,
     });
+    this.categoryService = categoryService;
   }
 
   /**
@@ -235,8 +243,26 @@ export class MetadataService {
         throw new Error(`Response validation failed: ${errors}`);
       }
 
-      // Return validated and transformed data
-      return validationResult.data as RawAIMetadata;
+      // Map and validate category using CategoryService (Story 3.2, AC5)
+      const rawCategory = validationResult.data.category;
+      const validCategoryId = this.categoryService.toValidCategoryId(rawCategory);
+      const categoryName = this.categoryService.getNameById(validCategoryId);
+
+      logger.debug(
+        {
+          rawCategory,
+          validCategoryId,
+          categoryName,
+        },
+        'Category mapped to Adobe Stock taxonomy'
+      );
+
+      // Return validated and transformed data with mapped category
+      return {
+        title: validationResult.data.title,
+        keywords: validationResult.data.keywords,
+        category: validCategoryId,
+      } as RawAIMetadata;
     } catch (error) {
       // If it's already our validation error, rethrow
       if (error instanceof Error && error.message.startsWith('Response validation failed')) {

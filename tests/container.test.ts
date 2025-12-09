@@ -67,6 +67,7 @@ describe('Dependency Injection Container', () => {
       expect(serviceContainer.metadata).toBeDefined();
       expect(serviceContainer.imageProcessing).toBeDefined();
       expect(serviceContainer.csvExport).toBeDefined();
+      expect(serviceContainer.category).toBeDefined(); // Story 3.2
     });
 
     it('should return same instance on multiple accesses (singleton)', () => {
@@ -114,12 +115,19 @@ describe('Dependency Injection Container', () => {
     });
 
     it('should create services with no dependencies first', () => {
-      const { tempUrl, metadata, csvExport } = container.services;
+      const { tempUrl, csvExport, category } = container.services;
 
       // These services have no dependencies
       expect(tempUrl).toBeDefined();
-      expect(metadata).toBeDefined();
       expect(csvExport).toBeDefined();
+      expect(category).toBeDefined(); // Story 3.2
+    });
+
+    it('should inject CategoryService into MetadataService (Story 3.2)', () => {
+      const { metadata, category } = container.services;
+
+      expect(metadata).toBeDefined();
+      expect(category).toBeDefined();
     });
   });
 
@@ -130,6 +138,7 @@ describe('Dependency Injection Container', () => {
       expect(services.metadata).toBeDefined();
       expect(services.imageProcessing).toBeDefined();
       expect(services.csvExport).toBeDefined();
+      expect(services.category).toBeDefined(); // Story 3.2
     });
 
     it('should provide access to the same service instances as container.services', () => {
@@ -139,17 +148,20 @@ describe('Dependency Injection Container', () => {
       expect(services.metadata).toBeDefined();
       expect(services.imageProcessing).toBeDefined();
       expect(services.csvExport).toBeDefined();
+      expect(services.category).toBeDefined(); // Story 3.2
 
       // Both ways should give us functional services
       expect(typeof services.tempUrl.createTempUrl).toBe('function');
       expect(typeof services.metadata.generateMetadata).toBe('function');
       expect(typeof services.imageProcessing.processImage).toBe('function');
       expect(typeof services.csvExport.generateCSV).toBe('function');
+      expect(typeof services.category.mapNameToId).toBe('function'); // Story 3.2
 
       expect(typeof container.services.tempUrl.createTempUrl).toBe('function');
       expect(typeof container.services.metadata.generateMetadata).toBe('function');
       expect(typeof container.services.imageProcessing.processImage).toBe('function');
       expect(typeof container.services.csvExport.generateCSV).toBe('function');
+      expect(typeof container.services.category.mapNameToId).toBe('function'); // Story 3.2
     });
   });
 
@@ -218,6 +230,17 @@ describe('Dependency Injection Container', () => {
       expect(typeof csvExport.validateMetadata).toBe('function');
       expect(typeof csvExport.validateMetadataList).toBe('function');
     });
+
+    it('should expose CategoryService (Story 3.2)', () => {
+      const { category } = container.services;
+
+      expect(category).toBeDefined();
+      expect(typeof category.mapNameToId).toBe('function');
+      expect(typeof category.validateId).toBe('function');
+      expect(typeof category.getNameById).toBe('function');
+      expect(typeof category.getAllCategories).toBe('function');
+      expect(typeof category.toValidCategoryId).toBe('function');
+    });
   });
 
   describe('singleton pattern', () => {
@@ -257,7 +280,7 @@ describe('Dependency Injection Container', () => {
       const serviceContainer = container.services;
 
       // Check that all services are present
-      const expectedServices = ['tempUrl', 'metadata', 'imageProcessing', 'csvExport'];
+      const expectedServices = ['tempUrl', 'metadata', 'imageProcessing', 'csvExport', 'category']; // Story 3.2: added category
       const actualServices = Object.keys(serviceContainer);
 
       expectedServices.forEach(serviceName => {
@@ -281,12 +304,13 @@ describe('Dependency Injection Container', () => {
 
   describe('usage patterns', () => {
     it('should support destructuring import', () => {
-      const { tempUrl, metadata, imageProcessing, csvExport } = services;
+      const { tempUrl, metadata, imageProcessing, csvExport, category } = services;
 
       expect(tempUrl).toBeDefined();
       expect(metadata).toBeDefined();
       expect(imageProcessing).toBeDefined();
       expect(csvExport).toBeDefined();
+      expect(category).toBeDefined(); // Story 3.2
     });
 
     it('should support direct service access', () => {
@@ -294,6 +318,7 @@ describe('Dependency Injection Container', () => {
       expect(services.metadata).toBeDefined();
       expect(services.imageProcessing).toBeDefined();
       expect(services.csvExport).toBeDefined();
+      expect(services.category).toBeDefined(); // Story 3.2
     });
 
     it('should work with async operations', async () => {

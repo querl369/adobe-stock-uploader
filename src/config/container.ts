@@ -18,6 +18,7 @@ import { TempUrlService } from '@/services/temp-url.service';
 import { MetadataService } from '@/services/metadata.service';
 import { ImageProcessingService } from '@/services/image-processing.service';
 import { CsvExportService } from '@/services/csv-export.service';
+import { CategoryService } from '@/services/category.service';
 import { logger } from '@/utils/logger';
 
 /**
@@ -44,6 +45,12 @@ export interface ServiceContainer {
    * CSV export service for Adobe Stock
    */
   csvExport: CsvExportService;
+
+  /**
+   * Category mapping service for Adobe Stock taxonomy
+   * Story 3.2: Adobe Stock Category Taxonomy
+   */
+  category: CategoryService;
 }
 
 /**
@@ -73,19 +80,21 @@ class Container {
    *
    * Services are initialized in the correct order to satisfy dependencies:
    * 1. TempUrlService (no dependencies)
-   * 2. MetadataService (no dependencies)
-   * 3. ImageProcessingService (depends on TempUrlService, MetadataService)
-   * 4. CsvExportService (no dependencies)
+   * 2. CategoryService (no dependencies)
+   * 3. MetadataService (depends on CategoryService)
+   * 4. ImageProcessingService (depends on TempUrlService, MetadataService)
+   * 5. CsvExportService (no dependencies)
    */
   private initializeServices(): ServiceContainer {
     logger.info('Initializing service container');
 
     // Step 1: Initialize services with no dependencies
     const tempUrlService = new TempUrlService();
-    const metadataService = new MetadataService();
+    const categoryService = new CategoryService();
     const csvExportService = new CsvExportService();
 
     // Step 2: Initialize services with dependencies
+    const metadataService = new MetadataService(categoryService);
     const imageProcessingService = new ImageProcessingService(tempUrlService, metadataService);
 
     logger.info('Service container initialized successfully');
@@ -95,6 +104,7 @@ class Container {
       metadata: metadataService,
       imageProcessing: imageProcessingService,
       csvExport: csvExportService,
+      category: categoryService,
     };
   }
 

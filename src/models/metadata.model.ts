@@ -221,7 +221,7 @@ export interface RawAIMetadata {
  */
 export const rawAIMetadataSchema = z.object({
   title: z
-    .string({ required_error: 'title field is required' })
+    .string({ message: 'title field is required' })
     .min(1, 'title must be a non-empty string'),
 
   keywords: z

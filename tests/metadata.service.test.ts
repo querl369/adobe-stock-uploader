@@ -6,10 +6,12 @@
  * - Retry logic for failed requests
  * - Response parsing (JSON and markdown code blocks)
  * - Error handling and wrapping
+ * - Category mapping via CategoryService (Story 3.2)
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MetadataService } from '../src/services/metadata.service';
+import { CategoryService } from '../src/services/category.service';
 import { ExternalServiceError } from '../src/models/errors';
 import type { RawAIMetadata } from '../src/models/metadata.model';
 
@@ -51,16 +53,30 @@ vi.mock('../src/utils/retry', () => ({
   withRetry: vi.fn(async fn => await fn()),
 }));
 
+// Mock logger
+vi.mock('../src/utils/logger', () => ({
+  logger: {
+    info: vi.fn(),
+    debug: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
 describe('MetadataService', () => {
   let service: MetadataService;
   let mockOpenAI: any;
+  let categoryService: CategoryService;
 
   beforeEach(() => {
     // Reset mocks
     vi.clearAllMocks();
 
-    // Create service instance
-    service = new MetadataService();
+    // Create real CategoryService instance (it's lightweight and well-tested separately)
+    categoryService = new CategoryService();
+
+    // Create service instance with CategoryService dependency
+    service = new MetadataService(categoryService);
 
     // Access the OpenAI instance created by the service
     mockOpenAI = (service as any).openai;
@@ -80,7 +96,7 @@ describe('MetadataService', () => {
               content: JSON.stringify({
                 title: 'Beautiful sunset over mountains',
                 keywords: ['sunset', 'mountains', 'landscape'],
-                category: 1045,
+                category: 11, // Valid category: Landscape
               }),
             },
           },
@@ -94,7 +110,7 @@ describe('MetadataService', () => {
       expect(result).toEqual({
         title: 'Beautiful sunset over mountains',
         keywords: ['sunset', 'mountains', 'landscape'],
-        category: 1045,
+        category: 11, // CategoryService validates and passes through valid ID
       });
 
       // Verify API was called with correct parameters (including signal for timeout)
@@ -272,7 +288,7 @@ describe('MetadataService', () => {
       expect(result.title).toBe('Raw JSON');
     });
 
-    it('should handle category as string and preserve it', async () => {
+    it('should map invalid category ID to default (Story 3.2)', async () => {
       const imageUrl = 'https://example.com/image.jpg';
       const mockResponse = {
         choices: [
@@ -281,7 +297,7 @@ describe('MetadataService', () => {
               content: JSON.stringify({
                 title: 'Test',
                 keywords: ['test'],
-                category: '1045', // String category
+                category: '1045', // Invalid category ID - will be mapped to default (1)
               }),
             },
           },
@@ -292,7 +308,56 @@ describe('MetadataService', () => {
 
       const result = await service.generateMetadata(imageUrl);
 
-      expect(result.category).toBe('1045');
+      // CategoryService maps invalid "1045" to default category 1
+      expect(result.category).toBe(1);
+    });
+
+    it('should handle valid string category ID', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+      const mockResponse = {
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: 'Test',
+                keywords: ['test'],
+                category: '13', // Valid string category ID - People
+              }),
+            },
+          },
+        ],
+      };
+
+      mockOpenAI.chat.completions.create.mockResolvedValue(mockResponse);
+
+      const result = await service.generateMetadata(imageUrl);
+
+      // CategoryService validates and converts "13" to number 13
+      expect(result.category).toBe(13);
+    });
+
+    it('should map category name to ID (Story 3.2)', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+      const mockResponse = {
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: 'Test',
+                keywords: ['test'],
+                category: 'Technology', // Category name instead of ID
+              }),
+            },
+          },
+        ],
+      };
+
+      mockOpenAI.chat.completions.create.mockResolvedValue(mockResponse);
+
+      const result = await service.generateMetadata(imageUrl);
+
+      // CategoryService maps "Technology" to ID 19
+      expect(result.category).toBe(19);
     });
   });
 
@@ -428,7 +493,7 @@ describe('MetadataService', () => {
               content: JSON.stringify({
                 title: 'Beautiful sunset',
                 keywords: ['sunset', 'sky', 'nature'],
-                category: 1045,
+                category: 11, // Valid category: Landscape
               }),
             },
           },
@@ -440,7 +505,7 @@ describe('MetadataService', () => {
       const result = await service.generateMetadata(imageUrl);
       expect(result.title).toBe('Beautiful sunset');
       expect(result.keywords).toEqual(['sunset', 'sky', 'nature']);
-      expect(result.category).toBe(1045);
+      expect(result.category).toBe(11); // CategoryService validates and passes through
     });
 
     it('should reject response with missing title field', async () => {
@@ -542,7 +607,7 @@ describe('MetadataService', () => {
       expect(result.keywords).toEqual(['sunset', 'mountains', 'landscape', 'nature']);
     });
 
-    it('should accept category as string', async () => {
+    it('should accept category as string and map to valid ID', async () => {
       const imageUrl = 'https://example.com/image.jpg';
       const mockResponse = {
         choices: [
@@ -551,7 +616,7 @@ describe('MetadataService', () => {
               content: JSON.stringify({
                 title: 'Test',
                 keywords: ['test'],
-                category: '1045',
+                category: '19', // Valid string category ID
               }),
             },
           },
@@ -561,7 +626,8 @@ describe('MetadataService', () => {
       mockOpenAI.chat.completions.create.mockResolvedValue(mockResponse);
 
       const result = await service.generateMetadata(imageUrl);
-      expect(result.category).toBe('1045');
+      // CategoryService converts string "19" to number 19
+      expect(result.category).toBe(19);
     });
 
     it('should accept category as number', async () => {
@@ -573,7 +639,7 @@ describe('MetadataService', () => {
               content: JSON.stringify({
                 title: 'Test',
                 keywords: ['test'],
-                category: 1045,
+                category: 7, // Valid category: Food
               }),
             },
           },
@@ -583,7 +649,7 @@ describe('MetadataService', () => {
       mockOpenAI.chat.completions.create.mockResolvedValue(mockResponse);
 
       const result = await service.generateMetadata(imageUrl);
-      expect(result.category).toBe(1045);
+      expect(result.category).toBe(7);
     });
 
     it('should reject response with missing category', async () => {
