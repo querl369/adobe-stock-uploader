@@ -5,6 +5,48 @@ import { Input } from './components/ui/input';
 import { Label } from './components/ui/label';
 import { Progress } from './components/ui/progress';
 
+/**
+ * Generate CSV file from metadata
+ * Adobe Stock format: Filename, Title, Keywords, Category, Releases
+ */
+function generateCSV(
+  images: Array<{
+    filename: string;
+    title?: string;
+    keywords?: string;
+    category?: number;
+  }>,
+  initials: string
+): string {
+  const headers = ['Filename', 'Title', 'Keywords', 'Category', 'Releases'];
+  const rows = images
+    .filter((img) => img.title && img.keywords && img.category)
+    .map((img) => {
+      return [
+        img.filename,
+        `"${img.title}"`, // Wrap in quotes for CSV safety
+        `"${img.keywords}"`,
+        img.category?.toString() || '',
+        initials,
+      ].join(',');
+    });
+
+  return [headers.join(','), ...rows].join('\n');
+}
+
+/**
+ * Download CSV file
+ */
+function downloadCSV(csvContent: string, filename: string): void {
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 interface UploadedImage {
   id: string;
   file: File;
@@ -13,20 +55,13 @@ interface UploadedImage {
   title?: string;
   keywords?: string;
   category?: number;
+  fileId?: string; // Server-side file ID from upload response
 }
 
 interface ProcessingState {
   isProcessing: boolean;
   currentIndex: number;
   currentFileName: string;
-}
-
-interface ApiMetadataResponse {
-  fileName: string;
-  title?: string;
-  keywords?: string;
-  category?: number;
-  error?: string;
 }
 
 function DropZone({
@@ -112,28 +147,50 @@ function App() {
   const handleFileSelect = async (files: File[]) => {
     const imageFiles = files.filter((file) => file.type.startsWith('image/'));
 
-    // Upload files to server
-    for (const file of imageFiles) {
-      const formData = new FormData();
-      formData.append('image', file);
-
-      try {
-        await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
-        });
-      } catch (error) {
-        console.error('Error uploading file:', error);
-      }
+    if (imageFiles.length === 0) {
+      return;
     }
 
-    const newImages: UploadedImage[] = imageFiles.map((file) => ({
-      id: Math.random().toString(36).substr(2, 9),
-      file,
-      preview: URL.createObjectURL(file),
-    }));
-    setImages((prev) => [...prev, ...newImages]);
-    setIsDragging(false);
+    // Upload files to server using the modern batch upload endpoint
+    const formData = new FormData();
+    imageFiles.forEach((file) => {
+      formData.append('images', file); // Note: 'images' (plural) for batch upload
+    });
+
+    try {
+      const response = await fetch('/api/upload-images', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        alert(errorData.message || 'Failed to upload images');
+        return;
+      }
+
+      const result: {
+        success: boolean;
+        files: Array<{ id: string; name: string; size: number }>;
+        sessionUsage: string;
+      } = await response.json();
+
+      console.log('✅ Upload successful:', result.sessionUsage);
+
+      // Create image objects with server file IDs
+      const newImages: UploadedImage[] = imageFiles.map((file, index) => ({
+        id: Math.random().toString(36).substr(2, 9),
+        file,
+        preview: URL.createObjectURL(file),
+        fileId: result.files[index]?.id, // Store server-side file ID
+      }));
+
+      setImages((prev) => [...prev, ...newImages]);
+      setIsDragging(false);
+    } catch (error) {
+      console.error('Error uploading files:', error);
+      alert('Failed to upload images. Please try again.');
+    }
   };
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -152,6 +209,16 @@ function App() {
       return;
     }
 
+    // Collect file IDs from uploaded images
+    const fileIds = images
+      .map((img) => img.fileId)
+      .filter((id): id is string => id !== undefined);
+
+    if (fileIds.length === 0) {
+      alert('No files to process. Please upload images first.');
+      return;
+    }
+
     setProcessing({
       isProcessing: true,
       currentIndex: 0,
@@ -159,64 +226,133 @@ function App() {
     });
 
     try {
-      // Process batch
-      const response = await fetch('/api/process-batch', {
+      // Start batch processing using the modern endpoint
+      const response = await fetch('/api/process-batch-v2', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ initials }),
+        body: JSON.stringify({ fileIds }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to process images');
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to process images');
       }
 
       const result: {
-        metadataList: ApiMetadataResponse[];
-        csvFileName: string;
+        success: boolean;
+        batchId: string;
+        message: string;
       } = await response.json();
 
-      // Update images with metadata
-      const updatedImages = images.map((img) => {
-        const metadata = result.metadataList.find(
-          (m) => m.fileName === img.file.name
-        );
-        if (metadata && !metadata.error) {
-          return {
-            ...img,
-            title: metadata.title,
-            keywords: metadata.keywords,
-            category: metadata.category,
-            description: metadata.title,
-          };
+      console.log('✅ Batch processing started:', result.batchId);
+
+      // Poll for batch status
+      const batchId = result.batchId;
+      let isComplete = false;
+
+      while (!isComplete) {
+        await new Promise((resolve) => setTimeout(resolve, 2000)); // Poll every 2 seconds
+
+        const statusResponse = await fetch(`/api/batch-status/${batchId}`);
+        if (!statusResponse.ok) {
+          throw new Error('Failed to get batch status');
         }
-        return img;
-      });
 
-      setImages(updatedImages);
+        const statusData: {
+          batchId: string;
+          status: 'pending' | 'processing' | 'completed' | 'failed';
+          progress: {
+            total: number;
+            completed: number;
+            failed: number;
+            processing: number;
+            pending: number;
+          };
+          images: Array<{
+            id: string;
+            filename: string;
+            status: 'pending' | 'processing' | 'success' | 'failed';
+            metadata?: {
+              title: string;
+              keywords: string;
+              category: number;
+            };
+            error?: string;
+          }>;
+          estimatedTimeRemaining?: number;
+        } = await statusResponse.json();
 
-      // Download CSV
-      const csvResponse = await fetch('/api/export-csv', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ csvFileName: result.csvFileName }),
-      });
+        // Update progress
+        setProcessing({
+          isProcessing: true,
+          currentIndex: statusData.progress.completed,
+          currentFileName: statusData.images.find((img) => img.status === 'processing')
+            ?.filename || '',
+        });
 
-      if (csvResponse.ok) {
-        const blob = await csvResponse.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = result.csvFileName;
-        a.click();
-        URL.revokeObjectURL(url);
+        console.log(
+          `Progress: ${statusData.progress.completed}/${statusData.progress.total}`
+        );
+
+        if (statusData.status === 'completed' || statusData.status === 'failed') {
+          isComplete = true;
+
+          // Update images with metadata from successful results
+          const updatedImages = images.map((img) => {
+            const result = statusData.images.find(
+              (imgResult) => imgResult.id === img.fileId
+            );
+            if (result && result.status === 'success' && result.metadata) {
+              return {
+                ...img,
+                title: result.metadata.title,
+                keywords: result.metadata.keywords,
+                category: result.metadata.category,
+                description: result.metadata.title,
+              };
+            }
+            return img;
+          });
+
+          setImages(updatedImages);
+
+          // Generate and download CSV with the metadata
+          const csvData = statusData.images
+            .filter((img) => img.status === 'success' && img.metadata)
+            .map((img) => ({
+              filename: img.filename,
+              title: img.metadata!.title,
+              keywords: img.metadata!.keywords,
+              category: img.metadata!.category,
+            }));
+
+          if (csvData.length > 0) {
+            const csvContent = generateCSV(csvData, initials);
+            const csvFilename = `${initials}_${Date.now()}.csv`;
+            downloadCSV(csvContent, csvFilename);
+            console.log('✅ CSV downloaded:', csvFilename);
+          }
+
+          // Show completion message
+          const successCount = statusData.progress.completed - statusData.progress.failed;
+          if (successCount > 0) {
+            alert(
+              `Processing complete! ${successCount} of ${statusData.progress.total} images processed successfully. CSV file downloaded.`
+            );
+          } else {
+            alert('Processing failed. No images were processed successfully.');
+          }
+        }
       }
     } catch (error) {
       console.error('Error generating metadata:', error);
-      alert('Error generating metadata. Please try again.');
+      alert(
+        error instanceof Error
+          ? error.message
+          : 'Error generating metadata. Please try again.'
+      );
     } finally {
       setProcessing({
         isProcessing: false,
