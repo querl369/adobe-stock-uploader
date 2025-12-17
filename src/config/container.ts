@@ -19,6 +19,7 @@ import { MetadataService } from '@/services/metadata.service';
 import { ImageProcessingService } from '@/services/image-processing.service';
 import { CsvExportService } from '@/services/csv-export.service';
 import { CategoryService } from '@/services/category.service';
+import { MetadataValidationService } from '@/services/metadata-validation.service';
 import { logger } from '@/utils/logger';
 
 /**
@@ -51,6 +52,12 @@ export interface ServiceContainer {
    * Story 3.2: Adobe Stock Category Taxonomy
    */
   category: CategoryService;
+
+  /**
+   * Metadata validation service for Adobe Stock compliance
+   * Story 3.4: Metadata Validation & Quality Checks
+   */
+  metadataValidation: MetadataValidationService;
 }
 
 /**
@@ -81,9 +88,10 @@ class Container {
    * Services are initialized in the correct order to satisfy dependencies:
    * 1. TempUrlService (no dependencies)
    * 2. CategoryService (no dependencies)
-   * 3. MetadataService (depends on CategoryService)
-   * 4. ImageProcessingService (depends on TempUrlService, MetadataService)
-   * 5. CsvExportService (no dependencies)
+   * 3. MetadataValidationService (depends on CategoryService)
+   * 4. MetadataService (depends on CategoryService, MetadataValidationService)
+   * 5. ImageProcessingService (depends on TempUrlService, MetadataService)
+   * 6. CsvExportService (no dependencies)
    */
   private initializeServices(): ServiceContainer {
     logger.info('Initializing service container');
@@ -93,8 +101,11 @@ class Container {
     const categoryService = new CategoryService();
     const csvExportService = new CsvExportService();
 
-    // Step 2: Initialize services with dependencies
-    const metadataService = new MetadataService(categoryService);
+    // Step 2: Initialize validation service (depends on CategoryService)
+    const metadataValidationService = new MetadataValidationService(categoryService);
+
+    // Step 3: Initialize services with dependencies
+    const metadataService = new MetadataService(categoryService, metadataValidationService);
     const imageProcessingService = new ImageProcessingService(tempUrlService, metadataService);
 
     logger.info('Service container initialized successfully');
@@ -105,6 +116,7 @@ class Container {
       imageProcessing: imageProcessingService,
       csvExport: csvExportService,
       category: categoryService,
+      metadataValidation: metadataValidationService,
     };
   }
 

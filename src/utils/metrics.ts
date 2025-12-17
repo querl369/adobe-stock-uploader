@@ -106,6 +106,25 @@ export const openaiCallsTotal = new Counter({
 });
 
 /**
+ * Counter: Metadata validation failures
+ * Labels:
+ * - field: 'title' | 'keywords' | 'category'
+ * - error_code: ValidationErrorCode enum value
+ *
+ * Story 3.4: Metadata Validation & Quality Checks (AC6)
+ * Use to track:
+ * - Validation failure patterns
+ * - AI prompt optimization needs
+ * - Quality monitoring
+ */
+export const metadataValidationFailuresTotal = new Counter({
+  name: 'asu_metadata_validation_failures_total',
+  help: 'Total metadata validation failures by field and error code',
+  labelNames: ['field', 'error_code'] as const,
+  registers: [register],
+});
+
+/**
  * Metric Helper Functions
  * ========================
  */
@@ -167,6 +186,18 @@ export function recordTempUrlCreation(durationSeconds: number): void {
 export function recordCsvExport(durationSeconds: number, imageCount: number): void {
   processingDurationSeconds.observe({ stage: 'csv_export' }, durationSeconds);
   logger.debug({ durationSeconds, imageCount }, 'Recorded CSV export');
+}
+
+/**
+ * Records metadata validation failure
+ * Story 3.4: Metadata Validation & Quality Checks (AC6)
+ *
+ * @param field - Field that failed validation ('title' | 'keywords' | 'category')
+ * @param errorCode - Validation error code for categorization
+ */
+export function recordMetadataValidationFailure(field: string, errorCode: string): void {
+  metadataValidationFailuresTotal.inc({ field, error_code: errorCode });
+  logger.debug({ field, errorCode }, 'Recorded metadata validation failure');
 }
 
 /**

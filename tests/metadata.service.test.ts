@@ -12,6 +12,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MetadataService } from '../src/services/metadata.service';
 import { CategoryService } from '../src/services/category.service';
+import { MetadataValidationService } from '../src/services/metadata-validation.service';
 import { ExternalServiceError } from '../src/models/errors';
 import type { RawAIMetadata } from '../src/models/metadata.model';
 
@@ -63,10 +64,29 @@ vi.mock('../src/utils/logger', () => ({
   },
 }));
 
+// Story 3.4: Helper to create valid metadata that passes validation
+function createValidTestMetadata(
+  overrides: {
+    title?: string;
+    keywords?: string[];
+    category?: number | string;
+  } = {}
+) {
+  const defaultTitle =
+    'A beautiful professional stock photograph of nature landscape with mountains and sunset';
+  const defaultKeywords = Array.from({ length: 35 }, (_, i) => `keyword${i + 1}`);
+  return {
+    title: overrides.title ?? defaultTitle,
+    keywords: overrides.keywords ?? defaultKeywords,
+    category: overrides.category ?? 11,
+  };
+}
+
 describe('MetadataService', () => {
   let service: MetadataService;
   let mockOpenAI: any;
   let categoryService: CategoryService;
+  let validationService: MetadataValidationService;
 
   beforeEach(() => {
     // Reset mocks
@@ -75,8 +95,11 @@ describe('MetadataService', () => {
     // Create real CategoryService instance (it's lightweight and well-tested separately)
     categoryService = new CategoryService();
 
-    // Create service instance with CategoryService dependency
-    service = new MetadataService(categoryService);
+    // Create real MetadataValidationService instance (Story 3.4)
+    validationService = new MetadataValidationService(categoryService);
+
+    // Create service instance with both dependencies
+    service = new MetadataService(categoryService, validationService);
 
     // Access the OpenAI instance created by the service
     mockOpenAI = (service as any).openai;
@@ -89,15 +112,12 @@ describe('MetadataService', () => {
   describe('generateMetadata', () => {
     it('should generate metadata from image URL', async () => {
       const imageUrl = 'https://example.com/image.jpg';
+      const validMetadata = createValidTestMetadata({ category: 11 });
       const mockResponse = {
         choices: [
           {
             message: {
-              content: JSON.stringify({
-                title: 'Beautiful sunset over mountains',
-                keywords: ['sunset', 'mountains', 'landscape'],
-                category: 11, // Valid category: Landscape
-              }),
+              content: JSON.stringify(validMetadata),
             },
           },
         ],
@@ -107,11 +127,9 @@ describe('MetadataService', () => {
 
       const result = await service.generateMetadata(imageUrl);
 
-      expect(result).toEqual({
-        title: 'Beautiful sunset over mountains',
-        keywords: ['sunset', 'mountains', 'landscape'],
-        category: 11, // CategoryService validates and passes through valid ID
-      });
+      expect(result.title).toBe(validMetadata.title);
+      expect(result.keywords).toEqual(validMetadata.keywords);
+      expect(result.category).toBe(11); // CategoryService validates and passes through valid ID
 
       // Verify API was called with correct parameters (including signal for timeout)
       expect(mockOpenAI.chat.completions.create).toHaveBeenCalledWith(
@@ -127,12 +145,12 @@ describe('MetadataService', () => {
 
     it('should parse JSON wrapped in markdown code blocks', async () => {
       const imageUrl = 'https://example.com/image.jpg';
+      const validMetadata = createValidTestMetadata({ category: 1 });
       const mockResponse = {
         choices: [
           {
             message: {
-              content:
-                '```json\n{\n  "title": "Test Title",\n  "keywords": ["test"],\n  "category": 1\n}\n```',
+              content: '```json\n' + JSON.stringify(validMetadata, null, 2) + '\n```',
             },
           },
         ],
@@ -142,11 +160,9 @@ describe('MetadataService', () => {
 
       const result = await service.generateMetadata(imageUrl);
 
-      expect(result).toEqual({
-        title: 'Test Title',
-        keywords: ['test'],
-        category: 1,
-      });
+      expect(result.title).toBe(validMetadata.title);
+      expect(result.keywords).toEqual(validMetadata.keywords);
+      expect(result.category).toBe(1);
     });
 
     it('should throw ExternalServiceError on OpenAI failure', async () => {
@@ -251,12 +267,12 @@ describe('MetadataService', () => {
   describe('parseAIResponse (via generateMetadata)', () => {
     it('should handle responses with extra whitespace in code blocks', async () => {
       const imageUrl = 'https://example.com/image.jpg';
+      const validMetadata = createValidTestMetadata();
       const mockResponse = {
         choices: [
           {
             message: {
-              content:
-                '```json\n\n  \n{"title": "Test", "keywords": ["a"], "category": 1}\n  \n```',
+              content: '```json\n\n  \n' + JSON.stringify(validMetadata) + '\n  \n```',
             },
           },
         ],
@@ -266,16 +282,19 @@ describe('MetadataService', () => {
 
       const result = await service.generateMetadata(imageUrl);
 
-      expect(result.title).toBe('Test');
+      expect(result.title).toBe(validMetadata.title);
     });
 
     it('should handle raw JSON without code blocks', async () => {
       const imageUrl = 'https://example.com/image.jpg';
+      const validMetadata = createValidTestMetadata({
+        title: 'Raw JSON test with enough characters for valid title validation minimum',
+      });
       const mockResponse = {
         choices: [
           {
             message: {
-              content: '{"title": "Raw JSON", "keywords": ["test"], "category": 1}',
+              content: JSON.stringify(validMetadata),
             },
           },
         ],
@@ -285,20 +304,17 @@ describe('MetadataService', () => {
 
       const result = await service.generateMetadata(imageUrl);
 
-      expect(result.title).toBe('Raw JSON');
+      expect(result.title).toBe(validMetadata.title);
     });
 
     it('should map invalid category ID to default (Story 3.2)', async () => {
       const imageUrl = 'https://example.com/image.jpg';
+      const validMetadata = createValidTestMetadata({ category: '1045' });
       const mockResponse = {
         choices: [
           {
             message: {
-              content: JSON.stringify({
-                title: 'Test',
-                keywords: ['test'],
-                category: '1045', // Invalid category ID - will be mapped to default (1)
-              }),
+              content: JSON.stringify(validMetadata),
             },
           },
         ],
@@ -314,15 +330,12 @@ describe('MetadataService', () => {
 
     it('should handle valid string category ID', async () => {
       const imageUrl = 'https://example.com/image.jpg';
+      const validMetadata = createValidTestMetadata({ category: '13' });
       const mockResponse = {
         choices: [
           {
             message: {
-              content: JSON.stringify({
-                title: 'Test',
-                keywords: ['test'],
-                category: '13', // Valid string category ID - People
-              }),
+              content: JSON.stringify(validMetadata),
             },
           },
         ],
@@ -338,15 +351,12 @@ describe('MetadataService', () => {
 
     it('should map category name to ID (Story 3.2)', async () => {
       const imageUrl = 'https://example.com/image.jpg';
+      const validMetadata = createValidTestMetadata({ category: 'Technology' });
       const mockResponse = {
         choices: [
           {
             message: {
-              content: JSON.stringify({
-                title: 'Test',
-                keywords: ['test'],
-                category: 'Technology', // Category name instead of ID
-              }),
+              content: JSON.stringify(validMetadata),
             },
           },
         ],
@@ -364,15 +374,12 @@ describe('MetadataService', () => {
   describe('integration with retry logic', () => {
     it('should use retry wrapper for resilience', async () => {
       const imageUrl = 'https://example.com/image.jpg';
+      const validMetadata = createValidTestMetadata({ category: 1 });
       const mockResponse = {
         choices: [
           {
             message: {
-              content: JSON.stringify({
-                title: 'Test',
-                keywords: ['test'],
-                category: 1,
-              }),
+              content: JSON.stringify(validMetadata),
             },
           },
         ],
@@ -486,15 +493,12 @@ describe('MetadataService', () => {
   describe('Zod validation (AC5)', () => {
     it('should accept valid response with all required fields', async () => {
       const imageUrl = 'https://example.com/image.jpg';
+      const validMetadata = createValidTestMetadata({ category: 11 });
       const mockResponse = {
         choices: [
           {
             message: {
-              content: JSON.stringify({
-                title: 'Beautiful sunset',
-                keywords: ['sunset', 'sky', 'nature'],
-                category: 11, // Valid category: Landscape
-              }),
+              content: JSON.stringify(validMetadata),
             },
           },
         ],
@@ -503,8 +507,8 @@ describe('MetadataService', () => {
       mockOpenAI.chat.completions.create.mockResolvedValue(mockResponse);
 
       const result = await service.generateMetadata(imageUrl);
-      expect(result.title).toBe('Beautiful sunset');
-      expect(result.keywords).toEqual(['sunset', 'sky', 'nature']);
+      expect(result.title).toBe(validMetadata.title);
+      expect(result.keywords).toEqual(validMetadata.keywords);
       expect(result.category).toBe(11); // CategoryService validates and passes through
     });
 
@@ -586,13 +590,16 @@ describe('MetadataService', () => {
 
     it('should transform comma-separated keywords string to array', async () => {
       const imageUrl = 'https://example.com/image.jpg';
+      // Story 3.4: Need at least 30 keywords to pass validation
+      const keywordsList = Array.from({ length: 35 }, (_, i) => `keyword${i + 1}`);
       const mockResponse = {
         choices: [
           {
             message: {
               content: JSON.stringify({
-                title: 'Test',
-                keywords: 'sunset, mountains, landscape, nature',
+                title:
+                  'A beautiful professional stock photograph of nature landscape with mountains and sunset',
+                keywords: keywordsList.join(', '),
                 category: 1,
               }),
             },
@@ -604,18 +611,23 @@ describe('MetadataService', () => {
 
       const result = await service.generateMetadata(imageUrl);
       expect(Array.isArray(result.keywords)).toBe(true);
-      expect(result.keywords).toEqual(['sunset', 'mountains', 'landscape', 'nature']);
+      expect(result.keywords.length).toBe(35);
+      expect(result.keywords).toContain('keyword1');
+      expect(result.keywords).toContain('keyword35');
     });
 
     it('should accept category as string and map to valid ID', async () => {
       const imageUrl = 'https://example.com/image.jpg';
+      // Story 3.4: Need at least 30 keywords to pass validation
+      const keywordsList = Array.from({ length: 35 }, (_, i) => `keyword${i + 1}`);
       const mockResponse = {
         choices: [
           {
             message: {
               content: JSON.stringify({
-                title: 'Test',
-                keywords: ['test'],
+                title:
+                  'A beautiful professional stock photograph of technology and digital innovation',
+                keywords: keywordsList,
                 category: '19', // Valid string category ID
               }),
             },
@@ -632,13 +644,16 @@ describe('MetadataService', () => {
 
     it('should accept category as number', async () => {
       const imageUrl = 'https://example.com/image.jpg';
+      // Story 3.4: Need at least 30 keywords to pass validation
+      const keywordsList = Array.from({ length: 35 }, (_, i) => `keyword${i + 1}`);
       const mockResponse = {
         choices: [
           {
             message: {
               content: JSON.stringify({
-                title: 'Test',
-                keywords: ['test'],
+                title:
+                  'A beautiful professional stock photograph of delicious food and cuisine dishes',
+                keywords: keywordsList,
                 category: 7, // Valid category: Food
               }),
             },
@@ -659,8 +674,8 @@ describe('MetadataService', () => {
           {
             message: {
               content: JSON.stringify({
-                title: 'Test',
-                keywords: ['test'],
+                title: 'Test title that is long enough to pass validation requirements',
+                keywords: Array.from({ length: 35 }, (_, i) => `keyword${i}`),
               }),
             },
           },

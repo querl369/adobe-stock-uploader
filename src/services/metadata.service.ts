@@ -16,6 +16,7 @@ import { recordOpenAICall, recordOpenAIFailure } from '@/utils/metrics';
 import type { RawAIMetadata } from '@/models/metadata.model';
 import { rawAIMetadataSchema } from '@/models/metadata.model';
 import type { CategoryService } from '@/services/category.service';
+import type { MetadataValidationService } from '@/services/metadata-validation.service';
 
 /**
  * Service for generating image metadata using AI
@@ -23,31 +24,35 @@ import type { CategoryService } from '@/services/category.service';
 export class MetadataService {
   private openai: OpenAI;
   private categoryService: CategoryService;
+  private validationService: MetadataValidationService;
 
   /**
    * Creates a new MetadataService instance
    *
    * @param categoryService - Service for mapping and validating Adobe Stock categories
+   * @param validationService - Service for validating and sanitizing metadata (Story 3.4)
    */
-  constructor(categoryService: CategoryService) {
+  constructor(categoryService: CategoryService, validationService: MetadataValidationService) {
     this.openai = new OpenAI({
       apiKey: config.openai.apiKey,
     });
     this.categoryService = categoryService;
+    this.validationService = validationService;
   }
 
   /**
    * Generates metadata for an image using OpenAI Vision API
    *
    * @param imageUrl - Public HTTPS URL of the image to analyze
-   * @returns Promise resolving to parsed metadata
+   * @param fileId - Optional file identifier for fallback metadata generation (Story 3.4)
+   * @returns Promise resolving to validated and sanitized metadata
    * @throws ExternalServiceError if OpenAI API fails or times out
    *
    * @example
-   * const metadata = await metadataService.generateMetadata('https://example.com/image.jpg');
+   * const metadata = await metadataService.generateMetadata('https://example.com/image.jpg', 'abc123');
    * logger.info({ title: metadata.title, keywords: metadata.keywords }, 'Metadata generated');
    */
-  async generateMetadata(imageUrl: string): Promise<RawAIMetadata> {
+  async generateMetadata(imageUrl: string, fileId?: string): Promise<RawAIMetadata> {
     const startTime = Date.now();
     const timeoutMs = config.openai.timeoutMs;
 
@@ -158,7 +163,25 @@ export class MetadataService {
       );
       recordOpenAICall(duration, 0.002); // $0.002 per image for gpt-5-mini
 
-      return parsedMetadata;
+      // Story 3.4: Validate and sanitize metadata (AC7)
+      // Uses fallback if validation fails after sanitization
+      const effectiveFileId = fileId || this.extractFileIdFromUrl(imageUrl);
+      const validatedMetadata = this.validationService.validateAndSanitize(
+        parsedMetadata,
+        effectiveFileId
+      );
+
+      logger.debug(
+        {
+          originalTitle: parsedMetadata.title?.substring(0, 50),
+          validatedTitle: validatedMetadata.title?.substring(0, 50),
+          originalKeywordCount: parsedMetadata.keywords?.length,
+          validatedKeywordCount: validatedMetadata.keywords?.length,
+        },
+        'Metadata validated and sanitized'
+      );
+
+      return validatedMetadata;
     } catch (error) {
       // Clear timeout on error
       clearTimeout(timeoutId);
@@ -301,6 +324,25 @@ export class MetadataService {
         'OpenAI API connection validation failed'
       );
       return false;
+    }
+  }
+
+  /**
+   * Extracts file ID from image URL for fallback metadata generation
+   *
+   * @param imageUrl - Image URL containing UUID-based filename
+   * @returns Extracted UUID or 'unknown' if extraction fails
+   */
+  private extractFileIdFromUrl(imageUrl: string): string {
+    try {
+      // URL format: .../temp/{uuid}.jpg or .../temp/{uuid}-{original}.jpg
+      const urlParts = imageUrl.split('/');
+      const filename = urlParts[urlParts.length - 1];
+      // Extract UUID from filename (removes extension and any suffix after dash)
+      const uuidPart = filename.split('.')[0].split('-')[0];
+      return uuidPart || 'unknown';
+    } catch {
+      return 'unknown';
     }
   }
 }
