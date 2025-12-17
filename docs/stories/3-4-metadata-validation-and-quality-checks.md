@@ -2,7 +2,7 @@
 
 **Epic:** Epic 3 - AI Metadata Generation Engine  
 **Story ID:** 3-4  
-**Status:** ready-for-dev  
+**Status:** done  
 **Priority:** HIGH  
 **Estimated Time:** 2-3 hours
 
@@ -356,28 +356,399 @@ N/A
 
 ---
 
+## Code Review Findings
+
+**Review Date:** 2025-12-17  
+**Reviewer:** Senior Developer (Code Review Workflow)  
+**Status:** ⚠️ ISSUES FOUND - Requires Fixes Before Merge
+
+### 🔴 Critical Issues (MUST FIX)
+
+#### CR-001: Missing Retry with Adjusted Prompt (AC5, AC7 NOT FULLY IMPLEMENTED)
+
+**Severity:** Critical  
+**Files:** `src/services/metadata.service.ts`, `src/services/metadata-validation.service.ts`
+
+**Story Requirements:**
+
+- AC5 states: "**Given** metadata that fails validation **after retry**..."
+- AC7 states: "Use fallback metadata **if validation fails after retry**"
+
+**Current Behavior (INCORRECT):**
+The `validateAndSanitize()` method at line 481-503 in `metadata-validation.service.ts` immediately returns fallback metadata when validation fails, without attempting a retry with adjusted prompt.
+
+```typescript
+// Current implementation - SKIPS RETRY
+validateAndSanitize(metadata: RawAIMetadata, fileId: string): RawAIMetadata {
+  const result = this.validate(metadata);
+  if (result.valid && result.sanitizedMetadata) {
+    return result.sanitizedMetadata;
+  }
+  // BUG: Goes directly to fallback without retry!
+  return this.generateFallback(fileId);
+}
+```
+
+**Expected Behavior (per AC5/AC7):**
+
+1. Validation fails → Retry OpenAI API call with adjusted prompt
+2. Second validation fails → Then use fallback
+
+**Fix Required:**
+
+Option A: Update `MetadataService.generateMetadata()` to handle retry logic:
+
+```typescript
+async generateMetadata(imageUrl: string, fileId?: string): Promise<RawAIMetadata> {
+  const effectiveFileId = fileId || this.extractFileIdFromUrl(imageUrl);
+
+  // First attempt
+  const firstResponse = await this.callOpenAI(imageUrl);
+  const parsedMetadata = this.parseAIResponse(firstResponse);
+  const firstValidation = this.validationService.validate(parsedMetadata);
+
+  if (firstValidation.valid && firstValidation.sanitizedMetadata) {
+    return firstValidation.sanitizedMetadata;
+  }
+
+  // Retry with adjusted prompt (AC5/AC7)
+  logger.info(
+    { fileId: effectiveFileId, errors: firstValidation.errors.map(e => e.code) },
+    'Validation failed, retrying with adjusted prompt'
+  );
+
+  const retryResponse = await this.callOpenAIWithAdjustedPrompt(imageUrl, firstValidation.errors);
+  const retryParsed = this.parseAIResponse(retryResponse);
+  const retryValidation = this.validationService.validate(retryParsed);
+
+  if (retryValidation.valid && retryValidation.sanitizedMetadata) {
+    return retryValidation.sanitizedMetadata;
+  }
+
+  // Only now use fallback (after retry failed)
+  return this.validationService.generateFallback(effectiveFileId);
+}
+```
+
+Option B: Add a new method `generateWithRetry()` that encapsulates this logic.
+
+**Tests Required:**
+
+- Test that retry is attempted when first validation fails
+- Test that fallback is only used after retry also fails
+- Test that adjusted prompt is different from original prompt
+
+---
+
+#### CR-002: No Test Coverage for Retry-Before-Fallback Logic
+
+**Severity:** Critical  
+**File:** `tests/metadata-validation.service.test.ts`
+
+**Issue:** The word "retry" does not appear anywhere in the validation test file. There are no tests verifying the AC5/AC7 retry behavior.
+
+**Missing Test Cases:**
+
+```typescript
+describe('Retry before fallback (AC5, AC7)', () => {
+  it('should retry with adjusted prompt when first validation fails', async () => {
+    // Mock first OpenAI response to return invalid metadata
+    // Mock second OpenAI response to return valid metadata
+    // Verify: final result is from retry, not fallback
+  });
+
+  it('should use fallback only after retry also fails validation', async () => {
+    // Mock both OpenAI responses to return invalid metadata
+    // Verify: fallback metadata is returned
+    // Verify: OpenAI was called twice
+  });
+
+  it('should log retry attempt with validation errors', async () => {
+    // Verify logger.info is called with retry message
+  });
+});
+```
+
+---
+
+### 🟡 Moderate Issues (SHOULD FIX)
+
+#### CR-003: Global Regex Bug with TITLE_FORBIDDEN_CHARS
+
+**Severity:** Moderate  
+**File:** `src/services/metadata-validation.service.ts`, line 25
+
+**Issue:** Using a regex with the global flag (`/g`) and `.test()` method can cause inconsistent behavior.
+
+**Current Code:**
+
+```typescript
+export const TITLE_FORBIDDEN_CHARS = /,/g; // Line 25
+// ...
+if (TITLE_FORBIDDEN_CHARS.test(title)) { // Line 357
+```
+
+**Problem:** Global regexes maintain a `lastIndex` state. Calling `.test()` multiple times may return incorrect results because `lastIndex` doesn't reset between calls.
+
+**Fix:**
+
+```typescript
+// Option 1: Remove global flag (preferred - .test() doesn't need it)
+export const TITLE_FORBIDDEN_CHARS = /,/;
+
+// Option 2: Reset lastIndex before test
+TITLE_FORBIDDEN_CHARS.lastIndex = 0;
+if (TITLE_FORBIDDEN_CHARS.test(title)) {
+```
+
+**Test to Add:**
+
+```typescript
+it('should consistently detect commas in multiple consecutive validations', () => {
+  // Call validate() multiple times with comma-containing titles
+  // Verify each call correctly detects the comma
+});
+```
+
+---
+
+#### CR-004: Dead Code - TITLE_FORBIDDEN_CHARS Validation Never Triggers
+
+**Severity:** Moderate  
+**File:** `src/services/metadata-validation.service.ts`, lines 356-364
+
+**Issue:** The validation check for commas at line 357 is **unreachable dead code** because the `sanitize()` method (called first at line 156) already replaces all commas with semicolons at line 225.
+
+**Flow:**
+
+1. `validate()` calls `sanitize()` first (line 156)
+2. `sanitize()` replaces commas: `title.replace(TITLE_FORBIDDEN_CHARS, ';')` (line 225)
+3. `validateTitle()` checks for commas (line 357) - **ALWAYS FALSE**
+
+**Fix Options:**
+
+Option A: Remove the dead code check:
+
+```typescript
+// DELETE lines 356-364 - this check can never trigger
+```
+
+Option B: Validate BEFORE sanitizing (if you want to log original issues):
+
+```typescript
+validate(metadata: RawAIMetadata): ValidationResult {
+  const errors: ValidationError[] = [];
+
+  // Validate original metadata first to capture original issues
+  const originalTitleErrors = this.validateTitleOriginal(metadata.title);
+
+  // Then sanitize
+  const sanitizedMetadata = this.sanitize(metadata);
+
+  // Validate sanitized (for length, etc.)
+  const sanitizedErrors = this.validateTitle(sanitizedMetadata.title);
+  // ...
+}
+```
+
+Option C: Keep sanitization first but remove the comma check from validateTitle since it's handled by sanitization.
+
+---
+
+#### CR-005: Missing Test - Sanitization Fixing Partial Validation Issues
+
+**Severity:** Moderate  
+**File:** `tests/metadata-validation.service.test.ts`
+
+**Issue:** No tests verify the scenario where sanitization fixes metadata that would otherwise fail validation.
+
+**Missing Test Cases:**
+
+```typescript
+describe('Sanitization fixing validation issues (AC4)', () => {
+  it('should pass validation when sanitization removes duplicate keywords', () => {
+    // 40 keywords with 10 duplicates = 30 unique after sanitization
+    const metadata = createValidMetadata({
+      keywords: [
+        ...Array.from({ length: 30 }, (_, i) => `keyword${i}`),
+        'keyword0',
+        'keyword1',
+        'keyword2', // duplicates
+        'keyword3',
+        'keyword4',
+        'keyword5', // duplicates
+        'keyword6',
+        'keyword7',
+        'keyword8',
+        'keyword9', // duplicates
+      ],
+    });
+
+    const result = service.validate(metadata);
+    expect(result.valid).toBe(true);
+    expect(result.sanitizedMetadata?.keywords.length).toBe(30);
+  });
+
+  it('should pass validation when commas in title are replaced with semicolons', () => {
+    const metadata = createValidMetadata({
+      title: 'Beautiful sunset, mountains, and nature photography in the wilderness',
+    });
+
+    const result = service.validate(metadata);
+    expect(result.valid).toBe(true);
+    expect(result.sanitizedMetadata?.title).not.toContain(',');
+    expect(result.sanitizedMetadata?.title).toContain(';');
+  });
+});
+```
+
+---
+
+### 🟢 Minor Issues (NICE TO FIX)
+
+#### CR-006: Inconsistent Default Category Between Services
+
+**Severity:** Minor  
+**Files:** `src/services/metadata-validation.service.ts`, `src/services/category.service.ts`
+
+**Issue:** Two different default categories are used:
+
+- `MetadataValidationService`: `DEFAULT_FALLBACK_CATEGORY = 8` (Graphic Resources)
+- `CategoryService`: `DEFAULT_CATEGORY_ID = 1` (Animals)
+
+When metadata has an invalid category:
+
+- If it goes through fallback → category 8
+- If it goes through sanitization → category 1
+
+**Recommendation:** Align defaults or document the intentional difference.
+
+---
+
+#### CR-007: Weak Metrics Testing
+
+**Severity:** Minor  
+**File:** `tests/metadata-validation.service.test.ts`
+
+**Issue:** Metrics testing only verifies the mock was called, not the actual metric values or labels.
+
+**Current Test (lines 33-36):**
+
+```typescript
+vi.mock('../src/utils/metrics', () => ({
+  recordMetadataValidationFailure: vi.fn(),
+}));
+```
+
+**Better Test:**
+
+```typescript
+it('should record validation failure metrics with correct labels', () => {
+  const metadata = createValidMetadata({ title: 'Short' });
+
+  service.validate(metadata);
+
+  expect(recordMetadataValidationFailure).toHaveBeenCalledWith('title', 'TITLE_TOO_SHORT');
+});
+```
+
+---
+
+### 📋 Summary of Required Actions
+
+| ID     | Severity    | Issue                         | Action Required                             |
+| ------ | ----------- | ----------------------------- | ------------------------------------------- |
+| CR-001 | 🔴 Critical | Missing retry before fallback | Implement retry logic in MetadataService    |
+| CR-002 | 🔴 Critical | No retry tests                | Add integration tests for retry flow        |
+| CR-003 | 🟡 Moderate | Global regex bug              | Remove `/g` flag from TITLE_FORBIDDEN_CHARS |
+| CR-004 | 🟡 Moderate | Dead code                     | Remove unreachable comma validation check   |
+| CR-005 | 🟡 Moderate | Missing sanitization tests    | Add tests for sanitization fixing issues    |
+| CR-006 | 🟢 Minor    | Inconsistent defaults         | Document or align default categories        |
+| CR-007 | 🟢 Minor    | Weak metrics tests            | Improve metrics test assertions             |
+
+---
+
+### ✅ What's Working Well
+
+- Title validation logic is correct (length checks, empty checks)
+- Keyword validation properly handles count, length, and deduplication
+- Sanitization correctly trims whitespace and removes empty keywords
+- Fallback metadata generation produces valid Adobe Stock-compliant data
+- Prometheus metrics are integrated
+- 54 unit tests pass with good coverage of happy paths
+- Integration with CategoryService works correctly
+- Error logging includes proper context for debugging
+
+---
+
 ## Change Log
 
 | Date       | Change                                     | Author |
 | ---------- | ------------------------------------------ | ------ |
 | 2025-12-17 | Story drafted for Sprint 3 implementation  | SM     |
 | 2025-12-17 | Implementation complete, 710 tests passing | Dev    |
+| 2025-12-17 | Code review completed - 7 issues found     | Review |
+| 2025-12-17 | Code review issues resolved - 731 tests    | Dev    |
+| 2025-12-17 | Code review APPROVED - all fixes verified  | Review |
+
+---
+
+## Code Review Fix Resolution
+
+**Fix Date:** 2025-12-17  
+**Fixed By:** Dev Agent
+
+### Summary
+
+All 7 code review issues have been resolved:
+
+| ID     | Severity    | Issue                         | Resolution                                              |
+| ------ | ----------- | ----------------------------- | ------------------------------------------------------- |
+| CR-001 | 🔴 Critical | Missing retry before fallback | ✅ Implemented retry logic with `buildAdjustedPrompt()` |
+| CR-002 | 🔴 Critical | No retry tests                | ✅ Added 6 integration tests for retry flow             |
+| CR-003 | 🟡 Moderate | Global regex bug              | ✅ Documented `/g` flag safe for `.replace()`           |
+| CR-004 | 🟡 Moderate | Dead code                     | ✅ Removed unreachable comma validation                 |
+| CR-005 | 🟡 Moderate | Missing sanitization tests    | ✅ Added 6 sanitization tests                           |
+| CR-006 | 🟢 Minor    | Inconsistent defaults         | ✅ Documented intentional difference                    |
+| CR-007 | 🟢 Minor    | Weak metrics tests            | ✅ Added 8 metrics tests                                |
+
+### Key Implementation: Retry-Before-Fallback Pattern
+
+```
+generateMetadata(imageUrl, fileId)
+  ├── First OpenAI call with standard prompt
+  ├── Validate response
+  │   ├── Valid? → Return sanitized metadata
+  │   └── Invalid? → Build adjusted prompt with error feedback
+  ├── Retry OpenAI call with adjusted prompt
+  ├── Validate retry response
+  │   ├── Valid? → Return sanitized metadata
+  │   └── Invalid? → Generate fallback metadata
+  └── Return result
+```
+
+### Test Results
+
+- Before fixes: 710 tests passing
+- After fixes: 731 tests passing (+21 new tests)
+- All regressions: None
 
 ---
 
 ## Definition of Done
 
-- [x] All acceptance criteria met (8 of 8 ACs)
+- [x] All acceptance criteria met (AC1-AC8 fully implemented)
 - [x] Code follows Epic 1 architecture patterns
-- [x] Unit tests written and passing (710 total tests)
+- [x] Unit tests written and passing (731 total tests)
 - [x] Title validation catches non-compliant titles
 - [x] Keyword validation ensures 30-50 range with deduplication
 - [x] Category validation uses existing CategoryService
 - [x] Fallback metadata generation works correctly
 - [x] Validation metrics tracking in Prometheus
-- [x] Integration with MetadataService verified
+- [x] Integration with MetadataService verified (retry-before-fallback implemented)
 - [x] Error handling works (no silent failures)
-- [ ] Code review completed
+- [x] Code review completed
+- [x] Code review issues resolved (2025-12-17)
 - [x] No regression in existing features
 - [x] Sprint status updated
 
@@ -390,3 +761,102 @@ N/A
 - [Source: src/services/category.service.ts] - Existing category service to reuse
 - [Source: src/models/metadata.model.ts] - Base schema to enhance
 - [Adobe Stock CSV Requirements](https://helpx.adobe.com/stock/contributor/help/metadata-tips.html) - Official guidelines
+
+---
+
+## Senior Developer Review (AI) - Post Code Review Fixes
+
+**Reviewer:** Senior Developer (Code Review Workflow)  
+**Date:** 2025-12-17  
+**Outcome:** ✅ APPROVED
+
+### Summary
+
+All 7 code review findings from the previous review have been properly addressed. The implementation now correctly implements the retry-before-fallback pattern as required by AC5 and AC7. The code is well-documented, thoroughly tested, and follows established project patterns.
+
+### Acceptance Criteria Coverage
+
+| AC# | Description                          | Status         | Evidence                                                                                    |
+| --- | ------------------------------------ | -------------- | ------------------------------------------------------------------------------------------- |
+| AC1 | Title Validation (50-200 chars)      | ✅ IMPLEMENTED | `metadata-validation.service.ts:341-380` - validateTitle() with length checks, empty checks |
+| AC2 | Keyword Validation (30-50 terms)     | ✅ IMPLEMENTED | `metadata-validation.service.ts:395-456` - validateKeywords() with count, length, dedup     |
+| AC3 | Category Validation Against Taxonomy | ✅ IMPLEMENTED | `metadata-validation.service.ts:467-483` - validateCategory() using CategoryService         |
+| AC4 | Metadata Sanitization                | ✅ IMPLEMENTED | `metadata-validation.service.ts:229-291` - sanitize() with trim, comma replace, dedup       |
+| AC5 | Fallback Metadata Generation         | ✅ IMPLEMENTED | `metadata-validation.service.ts:304-328` - generateFallback() with UUID title               |
+| AC6 | Validation Error Tracking            | ✅ IMPLEMENTED | `metadata-validation.service.ts:192-207` - recordMetadataValidationFailure() calls          |
+| AC7 | Integration with MetadataService     | ✅ IMPLEMENTED | `metadata.service.ts:62-137` - retry-before-fallback pattern                                |
+| AC8 | Unit Tests for Validation            | ✅ IMPLEMENTED | `metadata-validation.service.test.ts` - 54+ tests covering all scenarios                    |
+
+**Summary:** 8 of 8 acceptance criteria fully implemented with evidence.
+
+### Task Completion Validation
+
+| Task                                             | Marked As   | Verified As | Evidence                                                 |
+| ------------------------------------------------ | ----------- | ----------- | -------------------------------------------------------- |
+| Create MetadataValidationService class structure | ✅ Complete | ✅ Verified | `metadata-validation.service.ts:141-518`                 |
+| Implement validate() method                      | ✅ Complete | ✅ Verified | `metadata-validation.service.ts:171-214`                 |
+| Implement sanitize() method                      | ✅ Complete | ✅ Verified | `metadata-validation.service.ts:229-291`                 |
+| Implement title validation                       | ✅ Complete | ✅ Verified | `metadata-validation.service.ts:341-380`                 |
+| Implement keyword validation                     | ✅ Complete | ✅ Verified | `metadata-validation.service.ts:395-456`                 |
+| Implement category validation                    | ✅ Complete | ✅ Verified | `metadata-validation.service.ts:467-483`                 |
+| Implement fallback generation (AC5)              | ✅ Complete | ✅ Verified | `metadata-validation.service.ts:304-328`                 |
+| Add validation failure metrics (AC6)             | ✅ Complete | ✅ Verified | `metrics.ts:120-125, 198-201`                            |
+| Integrate with MetadataService (AC7)             | ✅ Complete | ✅ Verified | `metadata.service.ts:62-137` - retry pattern implemented |
+| Register service in container.ts                 | ✅ Complete | ✅ Verified | `container.ts:22, 60, 105, 108, 119`                     |
+| Write comprehensive unit tests (AC8)             | ✅ Complete | ✅ Verified | `metadata-validation.service.test.ts` - 54+ tests        |
+| Run all tests with no regressions                | ✅ Complete | ✅ Verified | 731 tests passing                                        |
+
+**Summary:** 12 of 12 completed tasks verified with evidence. 0 false completions.
+
+### Code Review Fix Resolution Verification
+
+| ID     | Severity    | Issue                         | Resolution Status | Evidence                                                                      |
+| ------ | ----------- | ----------------------------- | ----------------- | ----------------------------------------------------------------------------- |
+| CR-001 | 🔴 Critical | Missing retry before fallback | ✅ FIXED          | `metadata.service.ts:62-137` - buildAdjustedPrompt() + retry logic            |
+| CR-002 | 🔴 Critical | No retry tests                | ✅ FIXED          | `metadata.service.test.ts:398-571` - 6 retry tests                            |
+| CR-003 | 🟡 Moderate | Global regex bug              | ✅ ADDRESSED      | `metadata-validation.service.ts:25-29` - documented, /g safe for .replace()   |
+| CR-004 | 🟡 Moderate | Dead code                     | ✅ FIXED          | `metadata-validation.service.ts:375-379` - removed comma check, comment added |
+| CR-005 | 🟡 Moderate | Missing sanitization tests    | ✅ FIXED          | `metadata-validation.service.test.ts:686-794` - 6 tests added                 |
+| CR-006 | 🟢 Minor    | Inconsistent defaults         | ✅ ADDRESSED      | `metadata-validation.service.ts:31-45` - intentional difference documented    |
+| CR-007 | 🟢 Minor    | Weak metrics tests            | ✅ FIXED          | `metadata-validation.service.test.ts:799-899` - 8 specific tests added        |
+
+### Test Coverage
+
+- **Total Tests:** 731 passing
+- **Validation Service Tests:** 54+ tests in `metadata-validation.service.test.ts`
+- **MetadataService Tests:** Includes 6 retry-before-fallback tests
+- **Coverage Areas:**
+  - Title validation (length, empty, punctuation)
+  - Keyword validation (count, dedup, length)
+  - Category validation (ID range, string names)
+  - Sanitization pipeline
+  - Fallback generation
+  - Retry-before-fallback flow
+  - Metrics recording
+
+### Architectural Alignment
+
+✅ Service properly registered in DI container  
+✅ Follows existing service patterns (constructor injection)  
+✅ Uses existing CategoryService (no duplication)  
+✅ Proper error logging with structured context  
+✅ Prometheus metrics integration for observability
+
+### Security Notes
+
+No security concerns identified. Input validation is properly implemented.
+
+### Best-Practices and References
+
+- Validation-before-use pattern correctly implemented
+- Fail-safe with fallback metadata ensures system resilience
+- Comprehensive test coverage protects against regressions
+- Proper separation of concerns (validation vs generation)
+
+### Action Items
+
+**No action items required.** All previous code review findings have been properly addressed.
+
+### Final Verdict
+
+**✅ APPROVED** - Story 3.4 is complete and ready for verification. All acceptance criteria are met, all tasks are verified complete, and all previous code review issues have been resolved. The implementation is solid, well-tested (731 tests passing), and follows project conventions.
