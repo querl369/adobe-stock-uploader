@@ -23,3 +23,5 @@ build/
 
 # Cursor rules
 .cursor/
+
+cookies.txt
