@@ -4,6 +4,8 @@
  * Handles AI-powered metadata generation using OpenAI Vision API.
  * This service wraps OpenAI API calls with error handling, retry logic,
  * and response parsing for Adobe Stock-compliant metadata.
+ *
+ * Story 3.4: Implements validation with retry-before-fallback pattern.
  */
 
 import OpenAI from 'openai';
@@ -12,11 +14,28 @@ import { PROMPT_TEXT } from '@/prompt-text';
 import { ExternalServiceError } from '@/models/errors';
 import { withRetry } from '@/utils/retry';
 import { logger } from '@/utils/logger';
-import { recordOpenAICall, recordOpenAIFailure } from '@/utils/metrics';
+import {
+  recordOpenAICall,
+  recordOpenAIFailure,
+  recordRetryAttempt,
+  recordRetrySuccess,
+  recordRetryExhausted,
+} from '@/utils/metrics';
+import {
+  classifyOpenAIError,
+  isRetryableOpenAIError,
+  getRetryDelayForError,
+  extractRetryAfter,
+  OpenAIErrorType,
+} from '@/utils/openai-error-classifier';
+import { getUserFriendlyErrorMessage, createErrorContext } from '@/utils/error-messages';
 import type { RawAIMetadata } from '@/models/metadata.model';
 import { rawAIMetadataSchema } from '@/models/metadata.model';
 import type { CategoryService } from '@/services/category.service';
-import type { MetadataValidationService } from '@/services/metadata-validation.service';
+import type {
+  MetadataValidationService,
+  ValidationError,
+} from '@/services/metadata-validation.service';
 
 /**
  * Service for generating image metadata using AI
@@ -43,8 +62,13 @@ export class MetadataService {
   /**
    * Generates metadata for an image using OpenAI Vision API
    *
+   * Story 3.4 (AC5, AC7): Implements retry-before-fallback pattern:
+   * 1. First attempt with standard prompt
+   * 2. If validation fails, retry with adjusted prompt including error feedback
+   * 3. Only use fallback metadata if retry also fails
+   *
    * @param imageUrl - Public HTTPS URL of the image to analyze
-   * @param fileId - Optional file identifier for fallback metadata generation (Story 3.4)
+   * @param fileId - Optional file identifier for fallback metadata generation
    * @returns Promise resolving to validated and sanitized metadata
    * @throws ExternalServiceError if OpenAI API fails or times out
    *
@@ -53,12 +77,107 @@ export class MetadataService {
    * logger.info({ title: metadata.title, keywords: metadata.keywords }, 'Metadata generated');
    */
   async generateMetadata(imageUrl: string, fileId?: string): Promise<RawAIMetadata> {
+    const effectiveFileId = fileId || this.extractFileIdFromUrl(imageUrl);
+
+    try {
+      // First attempt with standard prompt
+      const firstResponse = await this.callOpenAI(imageUrl, PROMPT_TEXT);
+      const firstParsed = this.parseAIResponse(firstResponse);
+      const firstValidation = this.validationService.validate(firstParsed);
+
+      if (firstValidation.valid && firstValidation.sanitizedMetadata) {
+        logger.debug(
+          {
+            fileId: effectiveFileId,
+            titleLength: firstValidation.sanitizedMetadata.title.length,
+            keywordCount: firstValidation.sanitizedMetadata.keywords.length,
+          },
+          'Metadata validated on first attempt'
+        );
+        return firstValidation.sanitizedMetadata;
+      }
+
+      // Story 3.4 (AC5, AC7): Retry with adjusted prompt including error feedback
+      logger.info(
+        {
+          fileId: effectiveFileId,
+          errors: firstValidation.errors.map(e => e.code),
+          errorCount: firstValidation.errors.length,
+        },
+        'Validation failed on first attempt, retrying with adjusted prompt'
+      );
+
+      const adjustedPrompt = this.buildAdjustedPrompt(firstValidation.errors);
+      const retryResponse = await this.callOpenAI(imageUrl, adjustedPrompt);
+      const retryParsed = this.parseAIResponse(retryResponse);
+      const retryValidation = this.validationService.validate(retryParsed);
+
+      if (retryValidation.valid && retryValidation.sanitizedMetadata) {
+        logger.info(
+          {
+            fileId: effectiveFileId,
+            titleLength: retryValidation.sanitizedMetadata.title.length,
+            keywordCount: retryValidation.sanitizedMetadata.keywords.length,
+          },
+          'Metadata validated on retry attempt'
+        );
+        return retryValidation.sanitizedMetadata;
+      }
+
+      // Story 3.4 (AC5): Only use fallback after retry also fails
+      logger.warn(
+        {
+          fileId: effectiveFileId,
+          firstErrors: firstValidation.errors.map(e => e.code),
+          retryErrors: retryValidation.errors.map(e => e.code),
+          originalTitle: firstParsed.title?.substring(0, 50),
+          retryTitle: retryParsed.title?.substring(0, 50),
+        },
+        'Both validation attempts failed, using fallback metadata'
+      );
+
+      return this.validationService.generateFallback(effectiveFileId);
+    } catch (error) {
+      // If it's already an ExternalServiceError (from callOpenAI), rethrow
+      if (error instanceof ExternalServiceError) {
+        throw error;
+      }
+
+      // Wrap parsing errors in ExternalServiceError for consistent handling
+      throw new ExternalServiceError('Failed to generate metadata from OpenAI', {
+        imageUrl,
+        service: 'openai',
+        model: config.openai.model,
+        originalError: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  /**
+   * Calls OpenAI API with the given prompt
+   *
+   * Story 3.5: Enhanced error classification and retry logic
+   * - AC1: Retry once for network timeouts, 5xx, malformed JSON
+   * - AC2: Handle rate limits with retry-after, no retry for 401/400
+   * - AC3: Exponential backoff (2s, 4s, max 8s)
+   * - AC8: Record enhanced retry metrics
+   *
+   * @param imageUrl - Image URL to analyze
+   * @param promptText - Prompt text to use
+   * @returns Raw response text from OpenAI
+   * @throws ExternalServiceError on API failure
+   */
+  private async callOpenAI(imageUrl: string, promptText: string): Promise<string> {
     const startTime = Date.now();
     const timeoutMs = config.openai.timeoutMs;
 
-    // Create AbortController for timeout handling (AC4)
+    // Create AbortController for timeout handling
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    // Track if we've retried (for metrics)
+    let hasRetried = false;
+    let lastErrorType: OpenAIErrorType | null = null;
 
     try {
       // Wrap OpenAI call with retry logic for resilience
@@ -76,13 +195,13 @@ export class MetadataService {
                   content: [
                     {
                       type: 'text',
-                      text: PROMPT_TEXT,
+                      text: promptText,
                     },
                     {
                       type: 'image_url',
                       image_url: {
                         url: imageUrl,
-                        detail: 'low', // Reduces cost, sufficient for metadata (AC2)
+                        detail: 'low', // Reduces cost, sufficient for metadata
                       },
                     },
                   ],
@@ -101,49 +220,46 @@ export class MetadataService {
         },
         {
           maxAttempts: 3,
+          // AC3: Use exponential backoff from error classifier
+          initialDelayMs: 2000,
+          maxDelayMs: 8000,
+          backoffMultiplier: 2,
           retryableErrors: err => {
-            // Classify error for retry decision (AC6)
-            const status = err?.status || err?.response?.status;
-            const errorName = err?.name;
-            const isAbortError = errorName === 'AbortError' || err?.message?.includes('aborted');
+            // Story 3.5 (AC1, AC2, AC8): Use enhanced error classification
+            const errorType = classifyOpenAIError(err);
+            const isRetryable = isRetryableOpenAIError(errorType);
 
-            // Log error classification decision
+            // Log error classification decision with full context
             logger.warn(
               {
-                status,
-                errorName,
-                isAbortError,
-                willRetry: !isAbortError && (status === 429 || (status >= 500 && status < 600)),
+                errorType,
+                isRetryable,
                 errorMessage: err?.message,
+                status: err?.status || err?.response?.status,
               },
               'OpenAI error classification for retry decision'
             );
 
-            // Do NOT retry on abort/timeout errors
-            if (isAbortError) {
-              return false;
-            }
-
-            // Record retry attempt for retryable errors
-            if (status === 429 || (status >= 500 && status < 600)) {
+            // Record retry attempt metrics (AC8)
+            if (isRetryable) {
+              hasRetried = true;
+              lastErrorType = errorType;
+              recordRetryAttempt(errorType, 'failure');
               recordOpenAIFailure(true);
-              return true;
+
+              // AC2: For rate limits, log retry-after if present
+              if (errorType === OpenAIErrorType.RATE_LIMIT) {
+                const retryAfter = extractRetryAfter(err);
+                if (retryAfter !== undefined) {
+                  logger.info(
+                    { retryAfterSeconds: retryAfter },
+                    'Rate limit with retry-after header'
+                  );
+                }
+              }
             }
 
-            // Do NOT retry on 401 (auth) or 400 (validation) errors (AC6)
-            if (status === 401 || status === 400) {
-              logger.error({ status }, 'Non-retryable OpenAI error - auth or validation failure');
-              return false;
-            }
-
-            // Default: retry on network errors
-            const networkError = err?.code === 'ETIMEDOUT' || err?.code === 'ECONNRESET';
-            if (networkError) {
-              recordOpenAIFailure(true);
-              return true;
-            }
-
-            return false;
+            return isRetryable;
           },
         }
       );
@@ -151,71 +267,173 @@ export class MetadataService {
       // Clear timeout after successful completion
       clearTimeout(timeoutId);
 
-      // Extract and parse the response
-      const responseText = response.choices[0].message.content || '';
-      const parsedMetadata = this.parseAIResponse(responseText);
-
-      // Record successful API call with duration and cost (AC7, AC8)
+      // Record successful API call with duration and cost
       const duration = (Date.now() - startTime) / 1000;
       logger.info(
         { durationSeconds: duration, imageUrl: imageUrl.substring(0, 50) },
-        'Metadata generation completed'
+        'OpenAI API call completed successfully'
       );
       recordOpenAICall(duration, 0.002); // $0.002 per image for gpt-5-mini
 
-      // Story 3.4: Validate and sanitize metadata (AC7)
-      // Uses fallback if validation fails after sanitization
-      const effectiveFileId = fileId || this.extractFileIdFromUrl(imageUrl);
-      const validatedMetadata = this.validationService.validateAndSanitize(
-        parsedMetadata,
-        effectiveFileId
-      );
+      // AC8: Record retry success if we had retried
+      if (hasRetried && lastErrorType) {
+        recordRetryAttempt(lastErrorType, 'success');
+        recordRetrySuccess(lastErrorType);
+      }
 
+      // Extract and return the response text
+      const messageContent = response.choices[0]?.message?.content;
+      const refusal = response.choices[0]?.message?.refusal;
+
+      // Debug logging to see actual response structure
       logger.debug(
         {
-          originalTitle: parsedMetadata.title?.substring(0, 50),
-          validatedTitle: validatedMetadata.title?.substring(0, 50),
-          originalKeywordCount: parsedMetadata.keywords?.length,
-          validatedKeywordCount: validatedMetadata.keywords?.length,
+          hasContent: !!messageContent,
+          contentLength: messageContent?.length || 0,
+          refusal: refusal || null,
+          finishReason: response.choices[0]?.finish_reason,
+          model: response.model,
         },
-        'Metadata validated and sanitized'
+        'OpenAI response structure'
       );
 
-      return validatedMetadata;
+      if (refusal) {
+        logger.warn({ refusal }, 'OpenAI refused to process image');
+        throw new Error(`OpenAI refused: ${refusal}`);
+      }
+
+      return messageContent || '';
     } catch (error) {
       // Clear timeout on error
       clearTimeout(timeoutId);
 
-      // Record failure
-      recordOpenAIFailure(false);
-
-      // Check if this was a timeout/abort error (AC4)
-      const isAbortError =
-        error instanceof Error &&
-        (error.name === 'AbortError' || error.message.includes('aborted'));
-
-      if (isAbortError) {
-        logger.error(
-          { imageUrl, timeoutMs, durationMs: Date.now() - startTime },
-          'OpenAI API call timed out'
-        );
-        throw new ExternalServiceError('OpenAI API request timed out', {
-          imageUrl,
-          service: 'openai',
-          model: config.openai.model,
-          timeoutMs,
-          reason: 'timeout',
-        });
-      }
-
-      // Transform all other errors into ExternalServiceError for consistent handling
-      throw new ExternalServiceError('Failed to generate metadata from OpenAI', {
+      // Story 3.5: Enhanced error classification and user-friendly messages
+      const errorType = classifyOpenAIError(error);
+      const errorContext = createErrorContext(error, {
         imageUrl,
         service: 'openai',
         model: config.openai.model,
+        timeoutMs,
+        durationMs: Date.now() - startTime,
+      });
+
+      // Record final failure
+      recordOpenAIFailure(false);
+
+      // AC8: Record retry exhaustion if we had retried
+      if (hasRetried && lastErrorType) {
+        recordRetryExhausted(lastErrorType);
+      }
+
+      // Log technical details for debugging (AC4)
+      logger.error(
+        {
+          errorType,
+          userMessage: errorContext.userMessage,
+          technicalDescription: errorContext.technicalDescription,
+          originalError: errorContext.originalError,
+          imageUrl: imageUrl.substring(0, 50),
+          durationMs: Date.now() - startTime,
+        },
+        'OpenAI API call failed'
+      );
+
+      // AC7: Throw with user-friendly message
+      // Include both errorType (new) and reason (backward compat) for timeout errors
+      throw new ExternalServiceError(getUserFriendlyErrorMessage(errorType), {
+        imageUrl,
+        service: 'openai',
+        model: config.openai.model,
+        errorType,
+        timeoutMs,
+        // Backward compatibility: add reason for timeout errors
+        ...(errorType === OpenAIErrorType.TIMEOUT && { reason: 'timeout' }),
+        // Include technical details for debugging but not in user message
         originalError: error instanceof Error ? error.message : 'Unknown error',
       });
     }
+  }
+
+  /**
+   * Builds an adjusted prompt that includes feedback about validation errors
+   *
+   * Story 3.4 (AC5): Creates a prompt that explicitly addresses the validation
+   * issues from the first attempt to help the AI correct its output.
+   *
+   * @param errors - Validation errors from the first attempt
+   * @returns Adjusted prompt with error feedback
+   */
+  private buildAdjustedPrompt(errors: ValidationError[]): string {
+    const errorFeedback: string[] = [];
+
+    for (const error of errors) {
+      switch (error.code) {
+        case 'TITLE_TOO_SHORT':
+          errorFeedback.push(
+            '- Your title was TOO SHORT. The title MUST be at least 50 characters. Make it more descriptive.'
+          );
+          break;
+        case 'TITLE_TOO_LONG':
+          errorFeedback.push(
+            '- Your title was TOO LONG. The title MUST be at most 200 characters. Make it more concise.'
+          );
+          break;
+        case 'TITLE_EMPTY':
+          errorFeedback.push(
+            '- The title was MISSING or empty. You MUST provide a descriptive title.'
+          );
+          break;
+        case 'TITLE_FORBIDDEN_CHARS':
+          errorFeedback.push(
+            '- Your title contained COMMAS which are not allowed. Use semicolons or reword to avoid commas.'
+          );
+          break;
+        case 'KEYWORDS_TOO_FEW':
+          errorFeedback.push(
+            `- You provided only ${error.value} keywords. You MUST provide at least 30 keywords. Add more relevant keywords.`
+          );
+          break;
+        case 'KEYWORDS_TOO_MANY':
+          errorFeedback.push(
+            `- You provided ${error.value} keywords. You MUST provide at most 50 keywords. Remove less relevant ones.`
+          );
+          break;
+        case 'KEYWORD_TOO_LONG':
+          errorFeedback.push(
+            '- Some keywords exceeded 50 characters. Each keyword must be 50 characters or less.'
+          );
+          break;
+        case 'KEYWORD_EMPTY':
+          errorFeedback.push(
+            '- Some keywords were empty. Ensure all keywords are non-empty strings.'
+          );
+          break;
+        case 'KEYWORDS_DUPLICATES':
+          errorFeedback.push(
+            '- Your keywords contained duplicates. Ensure all keywords are unique (case-insensitive).'
+          );
+          break;
+        case 'CATEGORY_INVALID':
+          errorFeedback.push(
+            '- The category was invalid. You MUST use a category number between 1 and 21.'
+          );
+          break;
+      }
+    }
+
+    const feedbackSection =
+      errorFeedback.length > 0
+        ? `
+
+## CRITICAL: PREVIOUS ATTEMPT HAD ERRORS - FIX THESE ISSUES:
+
+${errorFeedback.join('\n')}
+
+Please generate metadata again, carefully fixing ALL the issues above.
+`
+        : '';
+
+    return PROMPT_TEXT + feedbackSection;
   }
 
   /**

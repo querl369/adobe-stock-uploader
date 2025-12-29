@@ -111,6 +111,8 @@ class BatchTrackingService {
         filename: img.filename,
         status: img.status,
         error: img.error,
+        // Include metadata if processing completed successfully
+        metadata: img.result?.success ? img.result.metadata : undefined,
       })),
       estimatedTimeRemaining: batch.estimatedTimeRemaining,
       createdAt: batch.createdAt.toISOString(),

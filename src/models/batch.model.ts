@@ -6,7 +6,7 @@
  * Used for status API endpoint and progress monitoring.
  */
 
-import type { ProcessingResult } from './metadata.model';
+import type { ProcessingResult, Metadata } from './metadata.model';
 
 /**
  * Status of a batch processing operation
@@ -170,6 +170,8 @@ export interface BatchStatusResponse {
     filename: string;
     status: ImageStatus;
     error?: string;
+    /** Generated metadata (only present when status is 'completed') */
+    metadata?: Metadata;
   }>;
 
   /**
