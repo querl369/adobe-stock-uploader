@@ -289,7 +289,10 @@ describe('ImageProcessingService', () => {
 
       expect(results).toHaveLength(1);
       expect(results[0].success).toBe(false);
-      expect(results[0].error?.message).toContain('timeout');
+      // Story 3.5 (AC7): User-friendly message instead of technical message
+      // The timeout error message is user-friendly but we can check errorType
+      expect(results[0].error?.message).toBeDefined();
+      expect(results[0].error?.stage).toBe('batch-processing');
     });
 
     it('should log batch processing summary', async () => {
@@ -614,7 +617,9 @@ describe('ImageProcessingService', () => {
 
         expect(results).toHaveLength(1);
         expect(results[0].success).toBe(false);
-        expect(results[0].error?.message).toContain('timeout');
+        // Story 3.5 (AC7): User-friendly message instead of technical "timeout"
+        expect(results[0].error?.message).toBeDefined();
+        expect(results[0].error?.stage).toBe('batch-processing');
       });
 
       it('should not block other images when one times out', async () => {

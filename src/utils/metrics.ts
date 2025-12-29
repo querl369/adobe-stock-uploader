@@ -125,6 +125,60 @@ export const metadataValidationFailuresTotal = new Counter({
 });
 
 /**
+ * Story 3.5: Error Recovery & Retry Logic (AC8)
+ * Enhanced retry metrics for detailed error tracking
+ */
+
+/**
+ * Counter: Retry attempts by error type and outcome
+ * Labels:
+ * - error_type: OpenAIErrorType enum value
+ * - outcome: 'success' | 'failure'
+ *
+ * Use to track:
+ * - Retry patterns by error type
+ * - Success rate of retries
+ */
+export const retryAttemptsTotal = new Counter({
+  name: 'asu_retry_attempts_total',
+  help: 'Total retry attempts by error type and outcome',
+  labelNames: ['error_type', 'outcome'] as const,
+  registers: [register],
+});
+
+/**
+ * Counter: Successful operations after at least one retry
+ * Labels:
+ * - error_type: The error type that triggered the initial retry
+ *
+ * Use to track:
+ * - Recovery success rate
+ * - Which error types are recoverable
+ */
+export const retrySuccessTotal = new Counter({
+  name: 'asu_retry_success_total',
+  help: 'Total successful operations after at least one retry',
+  labelNames: ['error_type'] as const,
+  registers: [register],
+});
+
+/**
+ * Counter: Operations where all retries were exhausted
+ * Labels:
+ * - error_type: The error type that caused exhaustion
+ *
+ * Use to track:
+ * - Persistent failure patterns
+ * - Error types that need attention
+ */
+export const retryExhaustedTotal = new Counter({
+  name: 'asu_retry_exhausted_total',
+  help: 'Total operations where all retries were exhausted',
+  labelNames: ['error_type'] as const,
+  registers: [register],
+});
+
+/**
  * Metric Helper Functions
  * ========================
  */
@@ -198,6 +252,45 @@ export function recordCsvExport(durationSeconds: number, imageCount: number): vo
 export function recordMetadataValidationFailure(field: string, errorCode: string): void {
   metadataValidationFailuresTotal.inc({ field, error_code: errorCode });
   logger.debug({ field, errorCode }, 'Recorded metadata validation failure');
+}
+
+/**
+ * Story 3.5: Enhanced Retry Metrics (AC8)
+ */
+
+/**
+ * Records a retry attempt with error type and outcome
+ *
+ * @param errorType - The classified error type (from OpenAIErrorType)
+ * @param outcome - 'success' if retry succeeded, 'failure' if it failed
+ */
+export function recordRetryAttempt(errorType: string, outcome: 'success' | 'failure'): void {
+  retryAttemptsTotal.inc({ error_type: errorType, outcome });
+  logger.debug({ errorType, outcome }, 'Recorded retry attempt');
+}
+
+/**
+ * Records a successful operation after at least one retry
+ *
+ * Call this when an operation eventually succeeds after retries.
+ *
+ * @param errorType - The error type that triggered the initial retry
+ */
+export function recordRetrySuccess(errorType: string): void {
+  retrySuccessTotal.inc({ error_type: errorType });
+  logger.debug({ errorType }, 'Recorded retry success');
+}
+
+/**
+ * Records when all retries are exhausted and operation failed
+ *
+ * Call this when an operation fails after all retry attempts.
+ *
+ * @param errorType - The error type that caused exhaustion
+ */
+export function recordRetryExhausted(errorType: string): void {
+  retryExhaustedTotal.inc({ error_type: errorType });
+  logger.debug({ errorType }, 'Recorded retry exhausted');
 }
 
 /**

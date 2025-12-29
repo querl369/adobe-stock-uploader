@@ -111,9 +111,9 @@ BASE_URL=http://localhost:3000
 
 # OpenAI Configuration
 OPENAI_API_KEY=sk-your-api-key-here
-OPENAI_MODEL=gpt-4o-mini
-OPENAI_MAX_TOKENS=500
-OPENAI_TEMPERATURE=0.3
+OPENAI_MODEL=gpt-5-nano
+OPENAI_MAX_TOKENS=5000
+OPENAI_TEMPERATURE=1
 
 # Processing Configuration
 CONCURRENCY_LIMIT=5

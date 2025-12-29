@@ -395,6 +395,181 @@ describe('MetadataService', () => {
     });
   });
 
+  // ============================================================================
+  // Story 3.4 CR-002: Retry-Before-Fallback Tests (AC5, AC7)
+  // ============================================================================
+  describe('retry before fallback (Story 3.4 AC5, AC7)', () => {
+    it('should retry with adjusted prompt when first validation fails due to short title', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+
+      // First response: Invalid (short title)
+      const invalidMetadata = {
+        title: 'Short title',
+        keywords: Array.from({ length: 35 }, (_, i) => `keyword${i + 1}`),
+        category: 11,
+      };
+
+      // Second response: Valid
+      const validMetadata = createValidTestMetadata();
+
+      mockOpenAI.chat.completions.create
+        .mockResolvedValueOnce({
+          choices: [{ message: { content: JSON.stringify(invalidMetadata) } }],
+        })
+        .mockResolvedValueOnce({
+          choices: [{ message: { content: JSON.stringify(validMetadata) } }],
+        });
+
+      const result = await service.generateMetadata(imageUrl);
+
+      // Should return valid metadata from retry
+      expect(result.title).toBe(validMetadata.title);
+      expect(result.keywords).toEqual(validMetadata.keywords);
+
+      // Verify OpenAI was called twice (first attempt + retry)
+      expect(mockOpenAI.chat.completions.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('should retry with adjusted prompt when first validation fails due to too few keywords', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+
+      // First response: Invalid (too few keywords)
+      const invalidMetadata = {
+        title:
+          'A beautiful professional stock photograph of nature landscape with mountains and sunset',
+        keywords: ['sunset', 'nature', 'mountain'], // Only 3 keywords
+        category: 11,
+      };
+
+      // Second response: Valid
+      const validMetadata = createValidTestMetadata();
+
+      mockOpenAI.chat.completions.create
+        .mockResolvedValueOnce({
+          choices: [{ message: { content: JSON.stringify(invalidMetadata) } }],
+        })
+        .mockResolvedValueOnce({
+          choices: [{ message: { content: JSON.stringify(validMetadata) } }],
+        });
+
+      const result = await service.generateMetadata(imageUrl);
+
+      // Should return valid metadata from retry
+      expect(result.keywords.length).toBeGreaterThanOrEqual(30);
+
+      // Verify OpenAI was called twice
+      expect(mockOpenAI.chat.completions.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('should use fallback metadata only after retry also fails validation', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+
+      // Both responses invalid
+      const invalidMetadata = {
+        title: 'Short',
+        keywords: ['only', 'five', 'keywords', 'here', 'sad'],
+        category: 11,
+      };
+
+      mockOpenAI.chat.completions.create.mockResolvedValue({
+        choices: [{ message: { content: JSON.stringify(invalidMetadata) } }],
+      });
+
+      const result = await service.generateMetadata(imageUrl, 'test-file-123');
+
+      // Should return fallback metadata
+      expect(result.title).toContain('Stock Photo');
+      expect(result.title).toContain('test-fil'); // First 8 chars of fileId
+      expect(result.keywords.length).toBe(30); // Fallback has exactly 30 keywords
+      expect(result.category).toBe(8); // Fallback category is 8 (Graphic Resources)
+
+      // Verify OpenAI was called twice (first attempt + retry)
+      expect(mockOpenAI.chat.completions.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('should NOT retry when first validation passes', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+      const validMetadata = createValidTestMetadata();
+
+      mockOpenAI.chat.completions.create.mockResolvedValue({
+        choices: [{ message: { content: JSON.stringify(validMetadata) } }],
+      });
+
+      const result = await service.generateMetadata(imageUrl);
+
+      // Should return metadata from first attempt
+      expect(result.title).toBe(validMetadata.title);
+
+      // Verify OpenAI was called only once
+      expect(mockOpenAI.chat.completions.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('should include error feedback in adjusted prompt', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+
+      // First response: Invalid (short title)
+      const invalidMetadata = {
+        title: 'Short title',
+        keywords: Array.from({ length: 35 }, (_, i) => `keyword${i + 1}`),
+        category: 11,
+      };
+
+      // Second response: Valid
+      const validMetadata = createValidTestMetadata();
+
+      mockOpenAI.chat.completions.create
+        .mockResolvedValueOnce({
+          choices: [{ message: { content: JSON.stringify(invalidMetadata) } }],
+        })
+        .mockResolvedValueOnce({
+          choices: [{ message: { content: JSON.stringify(validMetadata) } }],
+        });
+
+      await service.generateMetadata(imageUrl);
+
+      // Check that second call has adjusted prompt with error feedback
+      const secondCallArgs = mockOpenAI.chat.completions.create.mock.calls[1][0];
+      const promptContent = secondCallArgs.messages[0].content[0].text;
+
+      // Adjusted prompt should include error feedback about short title
+      expect(promptContent).toContain('PREVIOUS ATTEMPT HAD ERRORS');
+      expect(promptContent).toContain('title');
+      expect(promptContent).toContain('TOO SHORT');
+    });
+
+    it('should handle multiple validation errors in adjusted prompt', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+
+      // First response: Multiple issues
+      const invalidMetadata = {
+        title: 'Short',
+        keywords: ['one', 'two', 'three'], // Too few keywords
+        category: 99, // Invalid category (will be mapped to default by CategoryService)
+      };
+
+      // Second response: Valid
+      const validMetadata = createValidTestMetadata();
+
+      mockOpenAI.chat.completions.create
+        .mockResolvedValueOnce({
+          choices: [{ message: { content: JSON.stringify(invalidMetadata) } }],
+        })
+        .mockResolvedValueOnce({
+          choices: [{ message: { content: JSON.stringify(validMetadata) } }],
+        });
+
+      await service.generateMetadata(imageUrl);
+
+      // Check that second call has adjusted prompt with multiple error feedbacks
+      const secondCallArgs = mockOpenAI.chat.completions.create.mock.calls[1][0];
+      const promptContent = secondCallArgs.messages[0].content[0].text;
+
+      // Should mention both title and keyword issues
+      expect(promptContent).toContain('TOO SHORT');
+      expect(promptContent).toContain('keywords');
+    });
+  });
+
   describe('error scenarios', () => {
     it('should handle network timeouts', async () => {
       const imageUrl = 'https://example.com/image.jpg';
@@ -429,9 +604,10 @@ describe('MetadataService', () => {
 
   // ============================================================================
   // AC4: Timeout Handling Tests
+  // Story 3.5: User-friendly error messages (AC7) while preserving context (AC4)
   // ============================================================================
   describe('timeout handling (AC4)', () => {
-    it('should throw ExternalServiceError with timeout context when request is aborted', async () => {
+    it('should throw ExternalServiceError with user-friendly message and timeout context', async () => {
       const imageUrl = 'https://example.com/image.jpg';
       const abortError = new Error('The operation was aborted');
       abortError.name = 'AbortError';
@@ -444,14 +620,16 @@ describe('MetadataService', () => {
       } catch (error) {
         expect(error).toBeInstanceOf(ExternalServiceError);
         const extError = error as ExternalServiceError;
-        expect(extError.message).toBe('OpenAI API request timed out');
+        // Story 3.5 (AC7): User-friendly message
+        expect(extError.message).toBe('Processing took too long - please try again');
+        // AC4: Technical context preserved for debugging
         expect(extError.context?.reason).toBe('timeout');
         expect(extError.context?.service).toBe('openai');
         expect(extError.context?.timeoutMs).toBe(30000);
       }
     });
 
-    it('should throw timeout error when error message contains "aborted"', async () => {
+    it('should throw user-friendly timeout error when error message contains "aborted"', async () => {
       const imageUrl = 'https://example.com/image.jpg';
       const abortError = new Error('Request aborted due to timeout');
 
@@ -463,12 +641,13 @@ describe('MetadataService', () => {
       } catch (error) {
         expect(error).toBeInstanceOf(ExternalServiceError);
         const extError = error as ExternalServiceError;
-        expect(extError.message).toBe('OpenAI API request timed out');
+        // Story 3.5 (AC7): User-friendly message
+        expect(extError.message).toBe('Processing took too long - please try again');
         expect(extError.context?.reason).toBe('timeout');
       }
     });
 
-    it('should not treat non-abort errors as timeout', async () => {
+    it('should return user-friendly message for non-abort 5xx errors without timeout reason', async () => {
       const imageUrl = 'https://example.com/image.jpg';
       const serverError = new Error('Internal server error');
       (serverError as any).status = 500;
@@ -481,7 +660,9 @@ describe('MetadataService', () => {
       } catch (error) {
         expect(error).toBeInstanceOf(ExternalServiceError);
         const extError = error as ExternalServiceError;
-        expect(extError.message).toBe('Failed to generate metadata from OpenAI');
+        // Story 3.5 (AC7): User-friendly message for server errors
+        expect(extError.message).toBe('Processing failed - please try again');
+        // Not a timeout, so no reason field
         expect(extError.context?.reason).toBeUndefined();
       }
     });

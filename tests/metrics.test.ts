@@ -12,12 +12,18 @@ import {
   processingDurationSeconds,
   openaiCostUsd,
   openaiCallsTotal,
+  retryAttemptsTotal,
+  retrySuccessTotal,
+  retryExhaustedTotal,
   recordImageSuccess,
   recordImageFailure,
   recordOpenAICall,
   recordOpenAIFailure,
   recordTempUrlCreation,
   recordCsvExport,
+  recordRetryAttempt,
+  recordRetrySuccess,
+  recordRetryExhausted,
   getMetrics,
   getMetricsContentType,
   resetMetrics,
@@ -59,6 +65,24 @@ describe('Prometheus Metrics', () => {
     it('should define openaiCallsTotal counter', () => {
       expect(openaiCallsTotal).toBeDefined();
       expect(openaiCallsTotal.name).toBe('asu_openai_calls_total');
+    });
+
+    /**
+     * Story 3.5: Enhanced Retry Metrics (AC8)
+     */
+    it('should define retryAttemptsTotal counter', () => {
+      expect(retryAttemptsTotal).toBeDefined();
+      expect(retryAttemptsTotal.name).toBe('asu_retry_attempts_total');
+    });
+
+    it('should define retrySuccessTotal counter', () => {
+      expect(retrySuccessTotal).toBeDefined();
+      expect(retrySuccessTotal.name).toBe('asu_retry_success_total');
+    });
+
+    it('should define retryExhaustedTotal counter', () => {
+      expect(retryExhaustedTotal).toBeDefined();
+      expect(retryExhaustedTotal.name).toBe('asu_retry_exhausted_total');
     });
   });
 
@@ -171,6 +195,81 @@ describe('Prometheus Metrics', () => {
         const metrics = await getMetrics();
         expect(metrics).toContain('asu_processing_duration_seconds');
         expect(metrics).toContain('stage="csv_export"');
+      });
+    });
+
+    /**
+     * Story 3.5: Enhanced Retry Metrics (AC8)
+     */
+    describe('recordRetryAttempt', () => {
+      it('should record retry attempt with failure outcome', async () => {
+        recordRetryAttempt('timeout', 'failure');
+
+        const metrics = await getMetrics();
+        expect(metrics).toContain(
+          'asu_retry_attempts_total{error_type="timeout",outcome="failure"} 1'
+        );
+      });
+
+      it('should record retry attempt with success outcome', async () => {
+        recordRetryAttempt('server_error', 'success');
+
+        const metrics = await getMetrics();
+        expect(metrics).toContain(
+          'asu_retry_attempts_total{error_type="server_error",outcome="success"} 1'
+        );
+      });
+
+      it('should track multiple retry attempts by error type', async () => {
+        recordRetryAttempt('timeout', 'failure');
+        recordRetryAttempt('timeout', 'failure');
+        recordRetryAttempt('rate_limit', 'failure');
+
+        const metrics = await getMetrics();
+        expect(metrics).toContain(
+          'asu_retry_attempts_total{error_type="timeout",outcome="failure"} 2'
+        );
+        expect(metrics).toContain(
+          'asu_retry_attempts_total{error_type="rate_limit",outcome="failure"} 1'
+        );
+      });
+    });
+
+    describe('recordRetrySuccess', () => {
+      it('should record successful retry', async () => {
+        recordRetrySuccess('timeout');
+
+        const metrics = await getMetrics();
+        expect(metrics).toContain('asu_retry_success_total{error_type="timeout"} 1');
+      });
+
+      it('should track multiple successful retries by error type', async () => {
+        recordRetrySuccess('server_error');
+        recordRetrySuccess('server_error');
+        recordRetrySuccess('rate_limit');
+
+        const metrics = await getMetrics();
+        expect(metrics).toContain('asu_retry_success_total{error_type="server_error"} 2');
+        expect(metrics).toContain('asu_retry_success_total{error_type="rate_limit"} 1');
+      });
+    });
+
+    describe('recordRetryExhausted', () => {
+      it('should record exhausted retries', async () => {
+        recordRetryExhausted('timeout');
+
+        const metrics = await getMetrics();
+        expect(metrics).toContain('asu_retry_exhausted_total{error_type="timeout"} 1');
+      });
+
+      it('should track multiple exhausted retries by error type', async () => {
+        recordRetryExhausted('server_error');
+        recordRetryExhausted('server_error');
+        recordRetryExhausted('malformed');
+
+        const metrics = await getMetrics();
+        expect(metrics).toContain('asu_retry_exhausted_total{error_type="server_error"} 2');
+        expect(metrics).toContain('asu_retry_exhausted_total{error_type="malformed"} 1');
       });
     });
   });

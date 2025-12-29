@@ -89,6 +89,7 @@ export interface ProcessingError {
 
   /**
    * User-friendly error message
+   * Story 3.5 (AC7): Should be user-friendly, not technical
    */
   message: string;
 
@@ -102,6 +103,18 @@ export interface ProcessingError {
    * Additional context for debugging
    */
   context?: Record<string, any>;
+
+  /**
+   * Story 3.5: Classified error type from OpenAI error classifier
+   * Used for metrics and retry decisions
+   */
+  errorType?: string;
+
+  /**
+   * Story 3.5: Whether this error is recoverable (can be retried)
+   * Used by batch processing for retry decisions
+   */
+  isRecoverable?: boolean;
 }
 
 /**

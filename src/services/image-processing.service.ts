@@ -32,6 +32,12 @@ import { ProcessingError } from '@/models/errors';
 import { withRetry } from '@/utils/retry';
 import { logger } from '@/utils/logger';
 import { recordImageSuccess, recordImageFailure, recordTempUrlCreation } from '@/utils/metrics';
+import { getUserFriendlyErrorForException } from '@/utils/error-messages';
+import {
+  classifyOpenAIError,
+  isRetryableOpenAIError,
+  OpenAIErrorType,
+} from '@/utils/openai-error-classifier';
 
 /**
  * Internal state for tracking batch processing
@@ -130,14 +136,36 @@ export class ImageProcessingService {
       // Record failure metrics
       recordImageFailure(stage);
 
+      // Story 3.5: Classify error for retry decisions
+      const errorType = classifyOpenAIError(error);
+      const isRecoverable = isRetryableOpenAIError(errorType);
+
+      // Story 3.5 (AC4): Log detailed technical error for debugging
+      logger.error(
+        {
+          filename,
+          stage,
+          tempUrl: tempUrl?.substring(0, 50),
+          technicalError: error instanceof Error ? error.message : String(error),
+          errorType,
+          isRecoverable,
+        },
+        'Image processing failed'
+      );
+
+      // AC4: Include context for debugging, AC7: Use user-friendly message
+      // Include errorType for retry recovery decisions in batch processing
       return {
         success: false,
         filename,
         error: {
           code: 'PROCESSING_FAILED',
-          message: error instanceof Error ? error.message : 'Unknown processing error',
+          message: getUserFriendlyErrorForException(error),
           stage,
           context: { filename, tempUrl },
+          // Story 3.5: Include error type for recovery decisions
+          errorType,
+          isRecoverable,
         },
       };
     } finally {
@@ -383,14 +411,28 @@ export class ImageProcessingService {
     }
 
     // All retries exhausted
+    // Story 3.5 (AC4): Log detailed technical error for debugging
+    logger.warn(
+      {
+        filename,
+        retriesAttempted: retryAttempts,
+        technicalError: lastError?.message,
+      },
+      'All retries exhausted for image processing'
+    );
+
+    // AC4: Include context for debugging, AC7: Use user-friendly message
     return {
       success: false,
       filename,
       error: {
         code: 'PROCESSING_FAILED',
-        message: lastError?.message || 'Processing failed after all retries',
+        message: lastError
+          ? getUserFriendlyErrorForException(lastError)
+          : 'Processing failed - please try again',
         stage: 'batch-processing',
         context: { retriesAttempted: retryAttempts },
+        isRecoverable: false, // All retries exhausted, no more recovery possible
       },
     };
   }
@@ -416,15 +458,28 @@ export class ImageProcessingService {
    * Checks if a processing error is recoverable (should retry)
    *
    * Story 2.5: Error recovery
+   * Story 3.5: Enhanced error classification
    * Recoverable: network issues, server errors (5xx), rate limits (429)
    * Not recoverable: validation errors, auth errors, corrupted files
    *
    * @param error - Processing error to check
    * @returns true if error is recoverable
    */
-  private isRecoverableError(error?: { code?: string; message?: string; stage?: string }): boolean {
+  private isRecoverableError(error?: {
+    code?: string;
+    message?: string;
+    stage?: string;
+    isRecoverable?: boolean;
+    errorType?: string;
+  }): boolean {
     if (!error) return false;
 
+    // Story 3.5: Use pre-classified recoverability if available
+    if (typeof error.isRecoverable === 'boolean') {
+      return error.isRecoverable;
+    }
+
+    // Fallback to pattern matching for backward compatibility
     const recoverableCodes = ['NETWORK_ERROR', 'TIMEOUT', 'SERVER_ERROR', 'RATE_LIMITED'];
     const recoverablePatterns = [
       /timeout/i,

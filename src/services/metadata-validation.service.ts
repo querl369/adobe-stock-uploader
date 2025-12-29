@@ -22,8 +22,27 @@ export const TITLE_MAX_LENGTH = 200;
 export const KEYWORDS_MIN_COUNT = 30;
 export const KEYWORDS_MAX_COUNT = 50;
 export const KEYWORD_MAX_LENGTH = 50;
+// CR-003 Note: Global flag is needed for .replace() to replace ALL commas.
+// The original CR-003 issue was about using /g with .test() method which maintains
+// lastIndex state. Since we removed the .test() call (CR-004 dead code removal),
+// the global flag is safe to keep for .replace() usage in sanitize().
 export const TITLE_FORBIDDEN_CHARS = /,/g; // Commas break CSV export
-export const DEFAULT_FALLBACK_CATEGORY = 8; // Graphic Resources - safe default
+
+/**
+ * Default fallback category for generated fallback metadata
+ *
+ * CR-006 Note: This intentionally differs from CategoryService.DEFAULT_CATEGORY_ID (1 = Animals).
+ * - CategoryService uses category 1 (Animals) as default when mapping unknown category names/IDs.
+ *   This is used during normal metadata processing when AI returns an invalid category.
+ * - MetadataValidationService uses category 8 (Graphic Resources) for fallback metadata.
+ *   This is a "safer" generic default when generating completely synthetic fallback metadata
+ *   because the image couldn't be analyzed properly. Graphic Resources is broad and neutral.
+ *
+ * The distinction ensures:
+ * - Invalid AI categories → mapped to Animals (common, safe default)
+ * - Complete fallback metadata → uses Graphic Resources (generic, applicable to any image type)
+ */
+export const DEFAULT_FALLBACK_CATEGORY = 8; // Graphic Resources - safe default for fallback
 
 /**
  * Fallback keywords used when AI-generated keywords fail validation
@@ -353,15 +372,10 @@ export class MetadataValidationService {
       });
     }
 
-    // Check for forbidden characters (commas should already be sanitized)
-    if (TITLE_FORBIDDEN_CHARS.test(title)) {
-      errors.push({
-        field: 'title',
-        code: ValidationErrorCode.TITLE_FORBIDDEN_CHARS,
-        message: 'Title must not contain commas',
-        value: title,
-      });
-    }
+    // CR-004 Fix: Removed dead code for comma validation.
+    // Commas are replaced with semicolons in sanitize() before validateTitle() is called,
+    // so this check could never trigger. The sanitization approach is preferred as it
+    // auto-fixes the issue rather than just rejecting the metadata.
 
     return errors;
   }

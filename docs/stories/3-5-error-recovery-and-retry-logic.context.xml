@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<story-context id="3-5-error-recovery-and-retry-logic" v="1.0">
+  <metadata>
+    <epicId>3</epicId>
+    <storyId>5</storyId>
+    <title>Error Recovery &amp; Retry Logic</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-12-25</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/stories/3-5-error-recovery-and-retry-logic.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>system</asA>
+    <iWant>intelligent error recovery and retry logic for AI API failures</iWant>
+    <soThat>temporary failures don't cause batch processing to fail entirely and users receive helpful error messages</soThat>
+    <tasks>
+      <task id="1" ac="1,2,8">Create OpenAI error classification module
+        <subtask>Define OpenAIErrorType enum with all error types</subtask>
+        <subtask>Implement classifyOpenAIError() function</subtask>
+        <subtask>Implement isRetryableOpenAIError() function</subtask>
+        <subtask>Implement getRetryDelayForError() for rate limit handling</subtask>
+      </task>
+      <task id="2" ac="7">Create user-friendly error messages module
+        <subtask>Define error message constants for each error type</subtask>
+        <subtask>Implement getUserFriendlyErrorMessage() function</subtask>
+        <subtask>Implement getUserFriendlyErrorForException() helper</subtask>
+      </task>
+      <task id="3" ac="8">Enhance retry metrics
+        <subtask>Add asu_retry_attempts_total counter with labels</subtask>
+        <subtask>Add asu_retry_success_total counter</subtask>
+        <subtask>Add asu_retry_exhausted_total counter</subtask>
+        <subtask>Create helper functions for recording metrics</subtask>
+      </task>
+      <task id="4" ac="1,2,3,4">Update MetadataService to use enhanced error handling
+        <subtask>Import and use error classifier</subtask>
+        <subtask>Record enhanced retry metrics</subtask>
+        <subtask>Use user-friendly messages for errors</subtask>
+        <subtask>Handle rate limit retry-after header</subtask>
+      </task>
+      <task id="5" ac="5,6">Verify batch processing error handling
+        <subtask>Review ImageProcessingService for partial results</subtask>
+        <subtask>Ensure failed images don't block others</subtask>
+        <subtask>Verify batch response includes success/failure breakdown</subtask>
+      </task>
+      <task id="6" ac="9">Write comprehensive unit tests
+        <subtask>Test error classification for all error types</subtask>
+        <subtask>Test retry behavior and backoff timing</subtask>
+        <subtask>Test user-friendly message mapping</subtask>
+        <subtask>Test partial results in batch processing</subtask>
+        <subtask>Test metrics recording</subtask>
+      </task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1" title="Retry Strategy for Transient Errors">
+      Retry once for: network timeouts (ETIMEDOUT, ECONNRESET, ENOTFOUND), OpenAI 5xx server errors (500, 502, 503, 504), malformed JSON responses from OpenAI
+    </criterion>
+    <criterion id="AC2" title="Non-Retryable Error Handling">
+      Do NOT retry for: invalid API key (401), invalid image format (400), content policy violations (400). For rate limit (429): wait for retry-after duration, then retry
+    </criterion>
+    <criterion id="AC3" title="Exponential Backoff Delays">
+      First retry: 2s delay, second retry: 4s delay, maximum delay cap: 8 seconds
+    </criterion>
+    <criterion id="AC4" title="Failed Image Handling">
+      Mark image as failed, include user-friendly error message, log technical details for debugging, record failure in metrics
+    </criterion>
+    <criterion id="AC5" title="Batch Processing Continuity">
+      Failed images don't block others, continue processing remaining images, allow parallel processing to continue
+    </criterion>
+    <criterion id="AC6" title="Partial Results Return">
+      Return: successfully processed images with metadata, failed images with error messages, overall batch status, count summary (total, completed, failed)
+    </criterion>
+    <criterion id="AC7" title="User-Friendly Error Messages">
+      Messages should be: user-friendly, not technical, actionable when possible, consistent across error types
+    </criterion>
+    <criterion id="AC8" title="Error Classification and Metrics">
+      Classify errors by type (AUTH, RATE_LIMIT, TIMEOUT, SERVER_ERROR, MALFORMED, UNKNOWN), record retry attempts with error type labels, track retry success/exhaustion rates
+    </criterion>
+    <criterion id="AC9" title="Unit Tests for Error Recovery">
+      Test coverage: all error classification scenarios, retry behavior, exponential backoff, partial results, user-friendly messages, metrics recording
+    </criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/epics.md" title="Epic Breakdown" section="Story 3.5: Error Recovery &amp; Retry Logic">
+        Defines retry strategy: retry once for network timeouts, 5xx errors, malformed JSON. Do NOT retry for 401/400 errors. Exponential backoff with 2s, 4s delays. User-friendly error messages required.
+      </doc>
+      <doc path="docs/PRD.md" title="Product Requirements Document" section="Performance">
+        NFR-P1: Average processing time &lt;2 seconds per image. Batch of 10 images: &lt;40 seconds total. Error handling must not block batch processing.
+      </doc>
+      <doc path="docs/ARCHITECTURE_REFACTORING_GUIDE.md" title="Architecture Refactoring Guide" section="Phase 2.2">
+        Defines retry logic implementation with withRetry() utility, exponential backoff, and error classification patterns for OpenAI API calls.
+      </doc>
+      <doc path="docs/stories/3-4-metadata-validation-and-quality-checks.md" title="Story 3.4" section="Dev Agent Record">
+        Previous story implemented retry-before-fallback pattern in MetadataService. 731 tests passing. Use existing patterns and services.
+      </doc>
+    </docs>
+
+    <code>
+      <file path="src/utils/retry.ts" kind="utility" symbol="withRetry" lines="189-255">
+        Core retry utility with exponential backoff. Supports custom retryableErrors function, configurable maxAttempts, initialDelayMs, maxDelayMs, backoffMultiplier.
+      </file>
+      <file path="src/utils/retry.ts" kind="utility" symbol="isRetryableError" lines="85-122">
+        Default error classification. Retries: network errors (ECONNRESET, ETIMEDOUT), 5xx, 429. Does NOT retry: 4xx except 429.
+      </file>
+      <file path="src/services/metadata.service.ts" kind="service" symbol="MetadataService.generateMetadata" lines="62-137">
+        Implements retry-before-fallback pattern for OpenAI calls. Uses validation service for metadata quality checks.
+      </file>
+      <file path="src/services/metadata.service.ts" kind="service" symbol="MetadataService.callOpenAI" lines="147-290">
+        OpenAI API call with timeout handling, error classification, and retry logic. Records metrics on success/failure.
+      </file>
+      <file path="src/services/image-processing.service.ts" kind="service" symbol="ImageProcessingService.processBatch" lines="178-306">
+        Parallel batch processing with p-limit concurrency control. Progress tracking, error recovery, partial results support.
+      </file>
+      <file path="src/services/image-processing.service.ts" kind="service" symbol="ImageProcessingService.processWithRetryAndTimeout" lines="321-396">
+        Single image processing with retry and timeout. Returns failure result instead of throwing. Implements recovery logic.
+      </file>
+      <file path="src/services/image-processing.service.ts" kind="service" symbol="ImageProcessingService.isRecoverableError" lines="425-444">
+        Error classification for batch processing. Checks codes and message patterns for network, timeout, 429, 5xx errors.
+      </file>
+      <file path="src/utils/metrics.ts" kind="utility" symbol="recordOpenAICall,recordOpenAIFailure" lines="156-170">
+        Existing OpenAI metrics recording. recordOpenAIFailure accepts isRetry boolean to distinguish retry attempts.
+      </file>
+      <file path="src/models/errors.ts" kind="model" symbol="ExternalServiceError,ProcessingError" lines="89-126">
+        Typed error classes for OpenAI API failures and processing errors. Include context for debugging.
+      </file>
+      <file path="tests/retry.test.ts" kind="test" symbol="withRetry tests" lines="1-571">
+        Comprehensive retry tests: exponential backoff, retryable vs non-retryable errors, custom retry logic, OpenAI error handling. 49 tests.
+      </file>
+      <file path="tests/image-processing.service.test.ts" kind="test">
+        Batch processing tests including error recovery, partial results, timeout handling.
+      </file>
+    </code>
+
+    <dependencies>
+      <node>
+        <package name="openai" version="^6.8.1">OpenAI API client - source of errors to classify</package>
+        <package name="p-limit" version="^7.2.0">Concurrency control for batch processing</package>
+        <package name="prom-client" version="^15.1.3">Prometheus metrics - Counter, Histogram classes</package>
+        <package name="pino" version="^10.1.0">Structured logging for error tracking</package>
+        <package name="zod" version="^4.1.12">Schema validation for metadata</package>
+        <package name="vitest" version="^4.0.8" dev="true">Testing framework</package>
+      </node>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="pattern">Use constructor dependency injection - services receive dependencies via constructor</constraint>
+    <constraint type="pattern">Register new services in src/config/container.ts for DI</constraint>
+    <constraint type="pattern">Follow existing error class patterns in src/models/errors.ts</constraint>
+    <constraint type="pattern">Use structured logging with pino logger - include context objects</constraint>
+    <constraint type="pattern">Metrics use prom-client Counter/Histogram with consistent naming: asu_* prefix</constraint>
+    <constraint type="layer">Utilities in src/utils/ - pure functions, no dependencies on services</constraint>
+    <constraint type="testing">Test files in tests/ directory matching source filename pattern</constraint>
+    <constraint type="testing">Use vitest with vi.mock() for dependencies, vi.useFakeTimers() for delays</constraint>
+    <constraint type="existing">DO NOT recreate existing retry logic - enhance existing withRetry() or create complementary classifier</constraint>
+    <constraint type="existing">REUSE MetadataValidationService.generateFallback() for fallback metadata - don't duplicate</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="OpenAIErrorType" kind="enum" path="src/utils/openai-error-classifier.ts (to create)">
+      enum OpenAIErrorType { AUTH = 'auth', RATE_LIMIT = 'rate_limit', TIMEOUT = 'timeout', SERVER_ERROR = 'server_error', MALFORMED = 'malformed', VALIDATION = 'validation', UNKNOWN = 'unknown' }
+    </interface>
+    <interface name="classifyOpenAIError" kind="function" path="src/utils/openai-error-classifier.ts (to create)">
+      function classifyOpenAIError(error: any): OpenAIErrorType - Classifies OpenAI API errors by examining status codes, error codes, and messages
+    </interface>
+    <interface name="getUserFriendlyErrorMessage" kind="function" path="src/utils/error-messages.ts (to create)">
+      function getUserFriendlyErrorMessage(errorType: OpenAIErrorType): string - Returns user-facing error message for error type
+    </interface>
+    <interface name="recordRetryAttempt" kind="function" path="src/utils/metrics.ts">
+      function recordRetryAttempt(errorType: string, outcome: 'success' | 'failure'): void - Records retry attempt metrics with labels
+    </interface>
+    <interface name="ProcessingResult" kind="interface" path="src/models/metadata.model.ts">
+      interface ProcessingResult { success: boolean; filename: string; metadata?: Metadata; error?: { code: string; message: string; stage: string; context?: any } }
+    </interface>
+    <interface name="withRetry" kind="function" path="src/utils/retry.ts">
+      function withRetry&lt;T&gt;(fn: () => Promise&lt;T&gt;, options?: Partial&lt;RetryOptions&gt;): Promise&lt;T&gt; - Existing retry wrapper with exponential backoff
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Use Vitest testing framework with vi.mock() for mocking dependencies. Test files live in tests/ directory with .test.ts extension matching source filenames. Use vi.useFakeTimers() for testing delays and timeouts. Mock external services (OpenAI, logger, metrics). Follow AAA pattern (Arrange-Act-Assert). Group tests with describe() blocks by feature/scenario. Current test count: 731 tests passing - maintain this baseline.
+    </standards>
+    <locations>
+      <location>tests/*.test.ts</location>
+      <location>tests/openai-error-classifier.test.ts (to create)</location>
+      <location>tests/error-messages.test.ts (to create)</location>
+    </locations>
+    <ideas>
+      <idea ac="1,2">Test classifyOpenAIError() with: 401 errors → AUTH, 429 errors → RATE_LIMIT, timeout/abort errors → TIMEOUT, 5xx errors → SERVER_ERROR, JSON parse errors → MALFORMED, 400 errors → VALIDATION, unknown errors → UNKNOWN</idea>
+      <idea ac="2">Test isRetryableOpenAIError() returns true for: RATE_LIMIT, TIMEOUT, SERVER_ERROR, MALFORMED. Returns false for: AUTH, VALIDATION, UNKNOWN</idea>
+      <idea ac="3">Test getRetryDelayForError() returns correct delays: 2s for first attempt, 4s for second, capped at 8s. For RATE_LIMIT, use retry-after header if present</idea>
+      <idea ac="7">Test getUserFriendlyErrorMessage() returns appropriate message for each error type, never exposes technical details</idea>
+      <idea ac="8">Test metrics recording: recordRetryAttempt() increments counter with correct labels, recordRetrySuccess/Exhausted called appropriately</idea>
+      <idea ac="5,6">Test ImageProcessingService.processBatch() with mixed success/failure scenarios: verify partial results returned, failed images don't block others, summary counts correct</idea>
+      <idea ac="4">Test that failed images include user-friendly messages (not raw OpenAI errors) and technical details are logged</idea>
+    </ideas>
+  </tests>
+</story-context>
+
+

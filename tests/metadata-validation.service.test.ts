@@ -30,6 +30,9 @@ import {
 import { CategoryService } from '../src/services/category.service';
 import type { RawAIMetadata } from '../src/models/metadata.model';
 
+// Import metrics mock for CR-007 tests
+import { recordMetadataValidationFailure } from '../src/utils/metrics';
+
 // Mock metrics to avoid side effects
 vi.mock('../src/utils/metrics', () => ({
   recordMetadataValidationFailure: vi.fn(),
@@ -676,6 +679,257 @@ describe('MetadataValidationService', () => {
 
       // Verify title handling is consistent
       expect(result.sanitizedMetadata?.title || '').toBeDefined();
+    });
+  });
+
+  // ====================
+  // CR-005: Sanitization Fixing Validation Issues Tests
+  // ====================
+
+  describe('Sanitization fixing validation issues (CR-005, AC4)', () => {
+    it('should pass validation when sanitization removes duplicate keywords bringing count within range', () => {
+      // Start with 40 keywords including 10 duplicates = 30 unique after sanitization
+      const baseKeywords = Array.from({ length: 30 }, (_, i) => `keyword${i}`);
+      const duplicates = ['keyword0', 'keyword1', 'keyword2', 'keyword3', 'keyword4'];
+      const moreduplicates = ['keyword5', 'keyword6', 'keyword7', 'keyword8', 'keyword9'];
+      const allKeywords = [...baseKeywords, ...duplicates, ...moreduplicates];
+
+      const metadata = createValidMetadata({ keywords: allKeywords });
+
+      const result = service.validate(metadata);
+
+      // Should pass because deduplication brings count to exactly 30
+      expect(result.valid).toBe(true);
+      expect(result.sanitizedMetadata?.keywords.length).toBe(30);
+    });
+
+    it('should pass validation when all commas in title are replaced with semicolons', () => {
+      const metadata = createValidMetadata({
+        title:
+          'Beautiful sunset, mountains, and nature photography in the wilderness landscape area',
+      });
+
+      const result = service.validate(metadata);
+
+      expect(result.valid).toBe(true);
+      // Verify ALL commas were replaced with semicolons
+      expect(result.sanitizedMetadata?.title).not.toContain(',');
+      expect(result.sanitizedMetadata?.title).toContain(';');
+      // Verify the title was sanitized correctly with both commas replaced
+      expect(result.sanitizedMetadata?.title).toBe(
+        'Beautiful sunset; mountains; and nature photography in the wilderness landscape area'
+      );
+    });
+
+    it('should pass validation when whitespace is trimmed from title making it valid length', () => {
+      // Title with leading/trailing spaces that is valid length after trimming
+      const paddedTitle = '   ' + 'A'.repeat(60) + '   ';
+      const metadata = createValidMetadata({ title: paddedTitle });
+
+      const result = service.validate(metadata);
+
+      expect(result.valid).toBe(true);
+      expect(result.sanitizedMetadata?.title.length).toBe(60);
+      expect(result.sanitizedMetadata?.title).not.toMatch(/^\s|\s$/);
+    });
+
+    it('should pass validation when empty keywords are removed leaving valid count', () => {
+      // 35 valid keywords + 5 empty = 35 after removing empty
+      const validKeywords = Array.from({ length: 35 }, (_, i) => `validkeyword${i}`);
+      const withEmpty = [...validKeywords, '', '   ', '\t', '\n', ''];
+
+      const metadata = createValidMetadata({ keywords: withEmpty });
+
+      const result = service.validate(metadata);
+
+      expect(result.valid).toBe(true);
+      expect(result.sanitizedMetadata?.keywords.length).toBe(35);
+      expect(result.sanitizedMetadata?.keywords.every(k => k.length > 0)).toBe(true);
+    });
+
+    it('should pass validation when keywords are trimmed', () => {
+      const untrimmedKeywords = [
+        '  leading',
+        'trailing  ',
+        '  both  ',
+        ...Array.from({ length: 30 }, (_, i) => `keyword${i}`),
+      ];
+
+      const metadata = createValidMetadata({ keywords: untrimmedKeywords });
+
+      const result = service.validate(metadata);
+
+      expect(result.valid).toBe(true);
+      expect(result.sanitizedMetadata?.keywords).toContain('leading');
+      expect(result.sanitizedMetadata?.keywords).toContain('trailing');
+      expect(result.sanitizedMetadata?.keywords).toContain('both');
+    });
+
+    it('should handle combined sanitization: commas, duplicates, whitespace all at once', () => {
+      const metadata = createValidMetadata({
+        title:
+          '   Beautiful sunset, amazing mountains, wonderful nature in the wilderness landscape   ',
+        keywords: [
+          '  sunset  ',
+          'Sunset', // duplicate (case-insensitive)
+          'SUNSET', // duplicate
+          '',
+          '   ',
+          ...Array.from({ length: 35 }, (_, i) => `keyword${i}`),
+        ],
+      });
+
+      const result = service.validate(metadata);
+
+      expect(result.valid).toBe(true);
+      // Title should be trimmed and commas replaced
+      expect(result.sanitizedMetadata?.title.startsWith('Beautiful')).toBe(true);
+      expect(result.sanitizedMetadata?.title).not.toContain(',');
+      expect(result.sanitizedMetadata?.title).toContain(';');
+      // Keywords should be deduped, trimmed, and empty removed
+      const sunsetCount = result.sanitizedMetadata?.keywords.filter(
+        k => k.toLowerCase() === 'sunset'
+      ).length;
+      expect(sunsetCount).toBe(1);
+    });
+  });
+
+  // ====================
+  // CR-007: Improved Metrics Testing
+  // ====================
+
+  describe('Metrics recording (CR-007, AC6)', () => {
+    it('should record validation failure metrics with correct field and error code for short title', () => {
+      vi.clearAllMocks();
+      const metadata = createValidMetadata({
+        title: 'This title is too short for validation',
+      });
+
+      service.validate(metadata);
+
+      expect(recordMetadataValidationFailure).toHaveBeenCalledWith('title', 'TITLE_TOO_SHORT');
+    });
+
+    it('should record validation failure metrics with correct field and error code for too few keywords', () => {
+      vi.clearAllMocks();
+      const metadata = createValidMetadata({
+        keywords: ['only', 'five', 'keywords', 'here', 'oops'],
+      });
+
+      service.validate(metadata);
+
+      expect(recordMetadataValidationFailure).toHaveBeenCalledWith('keywords', 'KEYWORDS_TOO_FEW');
+    });
+
+    it('should record validation failure metrics with correct field and error code for too many keywords', () => {
+      vi.clearAllMocks();
+      const metadata = createValidMetadata({
+        keywords: Array.from({ length: 55 }, (_, i) => `uniquekeyword${i}`),
+      });
+
+      service.validate(metadata);
+
+      expect(recordMetadataValidationFailure).toHaveBeenCalledWith('keywords', 'KEYWORDS_TOO_MANY');
+    });
+
+    it('should record validation failure metrics with correct field and error code for long keyword', () => {
+      vi.clearAllMocks();
+      const longKeyword = 'a'.repeat(51);
+      const keywords = [longKeyword, ...Array.from({ length: 34 }, (_, i) => `keyword${i}`)];
+      const metadata = createValidMetadata({ keywords });
+
+      service.validate(metadata);
+
+      expect(recordMetadataValidationFailure).toHaveBeenCalledWith('keywords', 'KEYWORD_TOO_LONG');
+    });
+
+    it('should record validation failure metrics for each failed field', () => {
+      vi.clearAllMocks();
+      const metadata = {
+        title: 'Short', // Too short
+        keywords: ['one', 'two'], // Too few
+        category: 5,
+      } as RawAIMetadata;
+
+      service.validate(metadata);
+
+      // Should have recorded both title and keyword failures
+      expect(recordMetadataValidationFailure).toHaveBeenCalledWith('title', 'TITLE_TOO_SHORT');
+      expect(recordMetadataValidationFailure).toHaveBeenCalledWith('keywords', 'KEYWORDS_TOO_FEW');
+      expect(recordMetadataValidationFailure).toHaveBeenCalledTimes(2);
+    });
+
+    it('should NOT record metrics when validation passes', () => {
+      vi.clearAllMocks();
+      const metadata = createValidMetadata();
+
+      service.validate(metadata);
+
+      expect(recordMetadataValidationFailure).not.toHaveBeenCalled();
+    });
+
+    it('should record empty title error code', () => {
+      vi.clearAllMocks();
+      const metadata = createValidMetadata({ title: '' });
+
+      service.validate(metadata);
+
+      expect(recordMetadataValidationFailure).toHaveBeenCalledWith('title', 'TITLE_EMPTY');
+    });
+
+    it('should record long title error code', () => {
+      vi.clearAllMocks();
+      const metadata = createValidMetadata({ title: 'A'.repeat(201) });
+
+      service.validate(metadata);
+
+      expect(recordMetadataValidationFailure).toHaveBeenCalledWith('title', 'TITLE_TOO_LONG');
+    });
+  });
+
+  // ====================
+  // CR-003: Regex Consistency Tests
+  // ====================
+
+  describe('Regex consistency (CR-003)', () => {
+    it('should consistently replace ALL commas in multiple consecutive sanitization calls', () => {
+      // Test that the regex with /g flag works correctly with .replace()
+      // The /g flag is safe with .replace() and needed to replace ALL occurrences
+      // (The original CR-003 issue was about /g with .test() which we no longer use)
+      const metadata1 = createValidMetadata({
+        title: 'First title, with comma, here for testing sanitization in validation service flow',
+      });
+      const metadata2 = createValidMetadata({
+        title: 'Second title, with comma, also needs testing to verify regex consistency works',
+      });
+      const metadata3 = createValidMetadata({
+        title: 'Third title, has commas, as well and should be sanitized correctly each time',
+      });
+
+      const result1 = service.sanitize(metadata1);
+      const result2 = service.sanitize(metadata2);
+      const result3 = service.sanitize(metadata3);
+
+      // All should have ALL commas replaced consistently
+      expect(result1.title).not.toContain(',');
+      expect(result2.title).not.toContain(',');
+      expect(result3.title).not.toContain(',');
+
+      // Each should have semicolons where commas were
+      expect(result1.title).toContain(';');
+      expect(result2.title).toContain(';');
+      expect(result3.title).toContain(';');
+
+      // Verify specific replacements
+      expect(result1.title).toBe(
+        'First title; with comma; here for testing sanitization in validation service flow'
+      );
+      expect(result2.title).toBe(
+        'Second title; with comma; also needs testing to verify regex consistency works'
+      );
+      expect(result3.title).toBe(
+        'Third title; has commas; as well and should be sanitized correctly each time'
+      );
     });
   });
 
