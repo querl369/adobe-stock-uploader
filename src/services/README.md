@@ -300,7 +300,7 @@ Services read configuration from `src/config/app.config.ts`:
 config.processing.concurrencyLimit; // Default: 5
 config.processing.maxFileSizeMB; // Default: 50
 config.processing.tempFileLifetime; // Default: 10 seconds
-config.openai.model; // Default: gpt-5-mini
+config.openai.model; // Default: gpt-5-nano
 ```
 
 ## Future Enhancements

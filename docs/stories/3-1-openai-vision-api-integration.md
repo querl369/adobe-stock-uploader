@@ -24,7 +24,7 @@
 **When** an image is processed  
 **Then** the OpenAI API should be called with:
 
-- Model: `gpt-5-mini` (configurable via environment)
+- Model: `gpt-5-nano` (configurable via environment)
 - Temperature: `0.3` (accuracy over creativity)
 - Max tokens: `500` (sufficient for metadata)
 
@@ -77,7 +77,7 @@ interface ImageMetadata {
 
 **Given** a successful OpenAI call  
 **When** metadata is generated  
-**Then** the cost should be tracked via metrics (~$0.002 per image for gpt-5-mini)
+**Then** the cost should be tracked via metrics (~$0.002 per image for gpt-5-nano)
 
 ### AC8: Processing Duration Target
 

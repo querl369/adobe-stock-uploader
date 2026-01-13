@@ -567,7 +567,7 @@ const openai = new OpenAI({
 ```typescript
 // src/openai.ts:12-60
 const response = await openai.chat.completions.create({
-  model: 'gpt-5-mini',
+  model: 'gpt-5-nano',
   messages: [
     {
       role: 'user',
@@ -610,7 +610,7 @@ const responseText = response.choices[0].message.content;
   "id": "chatcmpl-...",
   "object": "chat.completion",
   "created": 1731096000,
-  "model": "gpt-5-mini",
+  "model": "gpt-5-nano",
   "choices": [
     {
       "index": 0,

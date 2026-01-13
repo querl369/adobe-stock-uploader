@@ -555,7 +555,7 @@ npm test -- --reporter=verbose 2>&1 | grep -E "Test Files|Tests"
 
 | AC  | Requirement              | Implementation              | Test Coverage   |
 | --- | ------------------------ | --------------------------- | --------------- |
-| AC1 | gpt-5-mini model         | `config.openai.model`       | ✅ Config tests |
+| AC1 | gpt-5-nano model         | `config.openai.model`       | ✅ Config tests |
 | AC2 | Temperature 0.3          | `config.openai.temperature` | ✅ Config tests |
 | AC3 | Max tokens 500           | `config.openai.maxTokens`   | ✅ Config tests |
 | AC4 | Image detail "low"       | `detail: 'low'` in API call | ✅ Unit tests   |

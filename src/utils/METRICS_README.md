@@ -110,7 +110,7 @@ recordOpenAICall(durationSeconds, 0.002); // $0.002 per image
 
 **Cost Model (as of 2025):**
 
-- `gpt-5-mini` vision: ~$0.002 per image
+- `gpt-5-nano` vision: ~$0.002 per image
 - Cost is tracked automatically when `recordOpenAICall()` is called
 
 ---

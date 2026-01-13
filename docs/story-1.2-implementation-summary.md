@@ -70,7 +70,7 @@ Created comprehensive documentation of all required and optional environment var
 
 - Replaced `import dotenv from 'dotenv'; dotenv.config();` with config service
 - Updated to use `config.openai.apiKey` instead of `process.env.OPENAI_API_KEY`
-- Updated to use `config.openai.model` (was hardcoded 'gpt-5-mini')
+- Updated to use `config.openai.model` (was hardcoded 'gpt-5-nano')
 - Added `config.openai.maxTokens` (was hardcoded 1000)
 - Added `config.openai.temperature` (was missing, now 0.3)
 
@@ -82,7 +82,7 @@ const openai = new OpenAI({
 });
 
 const response = await openai.chat.completions.create({
-  model: 'gpt-5-mini',
+  model: 'gpt-5-nano',
   max_completion_tokens: 1000,
   // temperature missing
 });
@@ -174,7 +174,7 @@ Server:
   - Is Production: false
 
 OpenAI:
-  - Model: gpt-5-mini
+  - Model: gpt-5-nano
   - Max Tokens: 1000
   - Temperature: 0.3
   - API Key: sk-proj-1F...

@@ -41,7 +41,7 @@ vi.mock('../src/config/app.config', () => ({
   config: {
     openai: {
       apiKey: 'test-key',
-      model: 'gpt-5-mini',
+      model: 'gpt-5-nano',
       maxTokens: 1000,
       temperature: 0.3,
       timeoutMs: 30000,
@@ -134,7 +134,7 @@ describe('MetadataService', () => {
       // Verify API was called with correct parameters (including signal for timeout)
       expect(mockOpenAI.chat.completions.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          model: 'gpt-5-mini',
+          model: 'gpt-5-nano',
           temperature: 0.3,
         }),
         expect.objectContaining({
@@ -238,7 +238,7 @@ describe('MetadataService', () => {
         expect(extError.context).toMatchObject({
           imageUrl,
           service: 'openai',
-          model: 'gpt-5-mini',
+          model: 'gpt-5-nano',
           originalError: 'Rate limit exceeded',
         });
       }

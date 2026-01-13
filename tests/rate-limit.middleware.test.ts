@@ -28,7 +28,7 @@ vi.mock('../src/utils/logger', () => ({
 vi.mock('../src/config/app.config', () => ({
   config: {
     server: { port: 3000, nodeEnv: 'test', baseUrl: 'http://localhost:3000' },
-    openai: { apiKey: 'test-key', model: 'gpt-5-mini', maxTokens: 500, temperature: 0.3 },
+    openai: { apiKey: 'test-key', model: 'gpt-5-nano', maxTokens: 500, temperature: 0.3 },
     processing: { concurrencyLimit: 5, maxFileSizeMB: 50, tempFileLifetimeSeconds: 10 },
     rateLimits: { anonymous: 10, freeTier: 100 },
   },

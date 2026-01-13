@@ -31,7 +31,7 @@ vi.mock('../src/config/app.config', () => ({
     },
     openai: {
       apiKey: 'test-key',
-      model: 'gpt-5-mini',
+      model: 'gpt-5-nano',
       maxTokens: 1000,
       temperature: 0.3,
     },

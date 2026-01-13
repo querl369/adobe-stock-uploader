@@ -12,7 +12,7 @@ const envSchema = z.object({
 
   // OpenAI
   OPENAI_API_KEY: z.string().min(20, 'OpenAI API key is required'),
-  OPENAI_MODEL: z.string().default('gpt-5-mini'),
+  OPENAI_MODEL: z.string().default('gpt-5-nano'),
   OPENAI_MAX_TOKENS: z.coerce.number().default(1000),
   OPENAI_TEMPERATURE: z.coerce.number().default(0.3),
   OPENAI_TIMEOUT_MS: z.coerce.number().default(30000),

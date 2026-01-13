@@ -1029,7 +1029,7 @@ npm install prom-client
 **When** the metadata generation service processes it
 **Then** the OpenAI API should be called with:
 
-- Model: `gpt-5-mini` (cost-effective vision model)
+- Model: `gpt-5-nano` (cost-effective vision model)
 - Temperature: 0.3 (accuracy over creativity)
 - Max tokens: 500 (sufficient for metadata)
 - Image detail: "low" (reduces cost, sufficient for metadata)
@@ -1059,7 +1059,7 @@ interface ImageMetadata {
 **Technical Notes:**
 
 - Refactor existing `src/openai.ts` into `src/services/metadata-generation.service.ts`
-- Update to use `gpt-5-mini` model (already in code)
+- Update to use `gpt-5-nano` model (already in code)
 - Improve prompt for Adobe Stock compliance
 - Add response validation (ensure JSON structure)
 - Implement exponential backoff for retries

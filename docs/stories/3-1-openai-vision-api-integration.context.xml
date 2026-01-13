@@ -33,7 +33,7 @@
     <ac id="AC1" title="OpenAI Model Configuration">
       <given>the metadata service is initialized</given>
       <when>an image is processed</when>
-      <then>the OpenAI API should be called with: Model: gpt-5-mini (configurable via environment), Temperature: 0.3 (accuracy over creativity), Max tokens: 500 (sufficient for metadata)</then>
+      <then>the OpenAI API should be called with: Model: gpt-5-nano (configurable via environment), Temperature: 0.3 (accuracy over creativity), Max tokens: 500 (sufficient for metadata)</then>
     </ac>
     <ac id="AC2" title="Image Detail Configuration">
       <given>an image URL is sent to OpenAI</given>
@@ -63,7 +63,7 @@
     <ac id="AC7" title="API Cost Tracking">
       <given>a successful OpenAI call</given>
       <when>metadata is generated</when>
-      <then>the cost should be tracked via metrics (~$0.002 per image for gpt-5-mini)</then>
+      <then>the cost should be tracked via metrics (~$0.002 per image for gpt-5-nano)</then>
     </ac>
     <ac id="AC8" title="Processing Duration Target">
       <given>an image URL is submitted</given>

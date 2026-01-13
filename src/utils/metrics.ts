@@ -80,7 +80,7 @@ export const processingDurationSeconds = new Histogram({
  * - Budget monitoring
  *
  * Cost model (as of 2024):
- * - gpt-5-mini vision: ~$0.002 per image
+ * - gpt-5-nano vision: ~$0.002 per image
  */
 export const openaiCostUsd = new Counter({
   name: 'asu_openai_cost_usd',

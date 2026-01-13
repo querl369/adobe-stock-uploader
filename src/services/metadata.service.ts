@@ -273,7 +273,7 @@ export class MetadataService {
         { durationSeconds: duration, imageUrl: imageUrl.substring(0, 50) },
         'OpenAI API call completed successfully'
       );
-      recordOpenAICall(duration, 0.002); // $0.002 per image for gpt-5-mini
+      recordOpenAICall(duration, 0.002); // $0.002 per image for gpt-5-nano
 
       // AC8: Record retry success if we had retried
       if (hasRetried && lastErrorType) {
