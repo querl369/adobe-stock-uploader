@@ -1,0 +1,287 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>4</epicId>
+    <storyId>1</storyId>
+    <title>CSV Generation Service</title>
+    <status>drafted</status>
+    <generatedAt>2026-01-13</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/stories/4-1-csv-generation-service.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>user</asA>
+    <iWant>my processed metadata exported as a CSV file</iWant>
+    <soThat>I can upload it directly to Adobe Stock without manual formatting</soThat>
+    <tasks>
+      <task id="1">Create CSV routes module (AC8)
+        <subtask>Create src/api/routes/csv.routes.ts</subtask>
+        <subtask>Implement POST /api/generate-csv endpoint</subtask>
+        <subtask>Add input validation for metadata list</subtask>
+        <subtask>Generate filename with timestamp</subtask>
+      </task>
+      <task id="2">Add cleanup functionality to CsvExportService (AC6)
+        <subtask>Implement cleanupOldFiles() method</subtask>
+        <subtask>Configure max age (24 hours default)</subtask>
+        <subtask>Add logging for cleanup operations</subtask>
+      </task>
+      <task id="3">Add cleanup scheduler to server (AC6)
+        <subtask>Schedule hourly cleanup job</subtask>
+        <subtask>Run initial cleanup on startup</subtask>
+      </task>
+      <task id="4">Mount CSV routes in server (AC8)
+        <subtask>Import and register routes in server.ts</subtask>
+        <subtask>Test endpoint accessibility</subtask>
+      </task>
+      <task id="5">Verify RFC 4180 compliance (AC4)
+        <subtask>Test with commas in titles</subtask>
+        <subtask>Test with quotes in keywords</subtask>
+        <subtask>Test with UTF-8 characters</subtask>
+        <subtask>Verify Excel compatibility</subtask>
+      </task>
+      <task id="6">Handle empty batch errors (AC7)
+        <subtask>Return 400 with user-friendly message</subtask>
+        <subtask>Log attempt for debugging</subtask>
+      </task>
+      <task id="7">Write comprehensive unit tests (AC9)
+        <subtask>Test CSV structure and columns</subtask>
+        <subtask>Test keywords formatting</subtask>
+        <subtask>Test filename generation</subtask>
+        <subtask>Test cleanup functionality</subtask>
+        <subtask>Test empty batch handling</subtask>
+        <subtask>Test RFC 4180 edge cases</subtask>
+      </task>
+      <task id="8">Run all tests to verify no regressions</task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1" title="CSV File Structure">
+      Given a batch of processed images with metadata,
+      When the CSV generation service runs,
+      Then it should create a CSV file with columns: Filename, Title, Keywords, Category, Releases;
+      UTF-8 encoding; Header row with exact column names.
+    </criterion>
+    <criterion id="AC2" title="Keywords Formatting">
+      Given metadata with keywords array,
+      When keywords are written to CSV,
+      Then they should be comma-separated within a single cell, Excel-compatible, no duplicates.
+    </criterion>
+    <criterion id="AC3" title="Filename Convention">
+      Given CSV generation is triggered,
+      When the file is created,
+      Then the filename should follow pattern: adobe-stock-metadata-{timestamp}.csv
+      and files should be saved to /csv_output directory.
+    </criterion>
+    <criterion id="AC4" title="RFC 4180 Compliance">
+      Given metadata may contain special characters,
+      When generating the CSV,
+      Then output should quote fields containing commas/quotes/newlines,
+      escape internal quotes by doubling, handle UTF-8 correctly, pass Adobe Stock validation.
+    </criterion>
+    <criterion id="AC5" title="Batch Association">
+      Given a completed processing batch,
+      When CSV is generated,
+      Then system should associate CSV file with batch record,
+      store CSV path in batch metadata, return CSV filename to client.
+    </criterion>
+    <criterion id="AC6" title="Auto-Cleanup of Old Files">
+      Given CSV files older than 24 hours exist,
+      When the cleanup job runs,
+      Then old CSV files should be deleted from /csv_output,
+      logged for monitoring, cleanup should run periodically.
+    </criterion>
+    <criterion id="AC7" title="Empty Batch Handling">
+      Given a batch with no successful metadata,
+      When CSV generation is attempted,
+      Then system should return error (not generate empty CSV),
+      provide user-friendly message, log for debugging.
+    </criterion>
+    <criterion id="AC8" title="Generate CSV API Endpoint">
+      Given processed metadata from a batch,
+      When POST /api/generate-csv is called with batch metadata,
+      Then endpoint should accept JSON body, generate CSV, return success response
+      with csvFileName/csvPath/recordCount, return 400 for invalid input.
+    </criterion>
+    <criterion id="AC9" title="Unit Tests">
+      Given the CSV generation implementation,
+      When tests are executed,
+      Then coverage should include CSV structure, keywords formatting, filename generation,
+      RFC 4180 compliance, empty batch handling, cleanup job functionality.
+    </criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/PRD.md</path>
+        <title>Product Requirements Document</title>
+        <section>FR-4: Adobe Stock CSV Export</section>
+        <snippet>CSV format matches Adobe Stock requirements exactly. Columns: Filename, Title, Keywords, Category. Keywords comma-separated within cell. UTF-8 encoding. One-click download button.</snippet>
+      </doc>
+      <doc>
+        <path>docs/epics.md</path>
+        <title>Epic Breakdown</title>
+        <section>Story 4.1: CSV Generation Service</section>
+        <snippet>Create CSV file with columns Filename, Title, Keywords, Category. CSV should include header row, quote fields containing commas (RFC 4180), handle special characters. Files saved to /csv_output directory.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture/architecture-api.md</path>
+        <title>Backend Architecture - Express API</title>
+        <section>POST /api/export-csv</section>
+        <snippet>Purpose: Convert metadata to Adobe Stock CSV format. Input: JSON metadata array. Output: CSV file download. Response format with Content-Type: text/csv.</snippet>
+      </doc>
+      <doc>
+        <path>docs/stories/3-5-error-recovery-and-retry-logic.md</path>
+        <title>Story 3.5: Error Recovery</title>
+        <section>Learnings</section>
+        <snippet>Use ProcessingError for CSV generation failures. User-friendly messages never expose technical details. Metrics tracking with recordCsvExport(). 871 tests passing - follow existing patterns.</snippet>
+      </doc>
+    </docs>
+
+    <code>
+      <file>
+        <path>src/services/csv-export.service.ts</path>
+        <kind>service</kind>
+        <symbol>CsvExportService</symbol>
+        <lines>1-161</lines>
+        <reason>Core CSV service to enhance with cleanupOldFiles() method. Already has generateCSV(), validateMetadata(), validateMetadataList() methods.</reason>
+      </file>
+      <file>
+        <path>src/config/container.ts</path>
+        <kind>config</kind>
+        <symbol>services</symbol>
+        <lines>1-179</lines>
+        <reason>Service container where csvExport service is registered. Already exports services.csvExport for use in routes.</reason>
+      </file>
+      <file>
+        <path>src/api/routes/batch.routes.ts</path>
+        <kind>routes</kind>
+        <symbol>router</symbol>
+        <lines>1-294</lines>
+        <reason>Reference pattern for creating new routes. Shows asyncHandler usage, ValidationError handling, session middleware, service calls.</reason>
+      </file>
+      <file>
+        <path>src/api/middleware/error-handler.ts</path>
+        <kind>middleware</kind>
+        <symbol>asyncHandler</symbol>
+        <reason>asyncHandler wrapper for route handlers. Import and use for CSV routes to avoid try-catch boilerplate.</reason>
+      </file>
+      <file>
+        <path>src/models/errors.ts</path>
+        <kind>models</kind>
+        <symbol>ValidationError, ProcessingError</symbol>
+        <reason>Error classes to use for input validation errors (400) and CSV generation failures (500).</reason>
+      </file>
+      <file>
+        <path>src/models/metadata.model.ts</path>
+        <kind>models</kind>
+        <symbol>Metadata</symbol>
+        <reason>Metadata interface definition used by CSV service. Contains filename, title, keywords, category, releases fields.</reason>
+      </file>
+      <file>
+        <path>src/utils/logger.ts</path>
+        <kind>utility</kind>
+        <symbol>logger</symbol>
+        <reason>Pino logger for structured logging in cleanup operations and route handlers.</reason>
+      </file>
+      <file>
+        <path>src/utils/metrics.ts</path>
+        <kind>utility</kind>
+        <symbol>recordCsvExport</symbol>
+        <reason>Metrics function already implemented for tracking CSV exports. Used in CsvExportService.generateCSV().</reason>
+      </file>
+      <file>
+        <path>server.ts</path>
+        <kind>server</kind>
+        <symbol>app</symbol>
+        <lines>1-453</lines>
+        <reason>Main server file where CSV routes need to be mounted. Shows pattern for importing and registering routes with app.use('/api', routes).</reason>
+      </file>
+      <file>
+        <path>tests/csv-export.service.test.ts</path>
+        <kind>test</kind>
+        <symbol>describe CsvExportService</symbol>
+        <lines>1-376</lines>
+        <reason>Existing test file for CSV service. Add cleanup tests here following established patterns with vi.mock for csv-writer.</reason>
+      </file>
+    </code>
+
+    <dependencies>
+      <node>
+        <package name="express" version="^4.18.2">Web framework for route handling</package>
+        <package name="csv-writer" version="^1.6.0">CSV file generation with RFC 4180 compliance</package>
+        <package name="vitest" version="^4.0.8">Testing framework for unit tests</package>
+        <package name="pino" version="^10.1.0">Structured logging for cleanup operations</package>
+        <package name="zod" version="^4.1.12">Input validation schemas</package>
+      </node>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="pattern">Routes follow pattern in batch.routes.ts: import express Router, use asyncHandler wrapper, throw typed errors (ValidationError, NotFoundError), call services via services object.</constraint>
+    <constraint type="pattern">Service methods follow DI pattern - CsvExportService is instantiated in container.ts and accessed via services.csvExport.</constraint>
+    <constraint type="pattern">Error responses use consistent JSON format: { success: false, error: { code, message, statusCode } }.</constraint>
+    <constraint type="testing">Tests use Vitest with vi.mock for external dependencies. Follow existing csv-export.service.test.ts patterns.</constraint>
+    <constraint type="logging">Use structured logging with Pino logger. Include context objects: { outputPath, recordCount, deletedCount }.</constraint>
+    <constraint type="directory">/csv_output directory is auto-created by server.ts on startup. Files saved there with timestamp-based names.</constraint>
+    <constraint type="architecture">Routes are thin - delegate business logic to services. CsvExportService handles actual CSV generation.</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>POST /api/generate-csv</name>
+      <kind>REST endpoint</kind>
+      <signature>POST /api/generate-csv
+Request: { metadataList: Metadata[], batchId?: string }
+Response: { success: true, csvFileName: string, csvPath: string, recordCount: number }
+Error: { success: false, error: { code: string, message: string } }</signature>
+      <path>src/api/routes/csv.routes.ts</path>
+    </interface>
+    <interface>
+      <name>CsvExportService.generateCSV</name>
+      <kind>service method</kind>
+      <signature>async generateCSV(metadataList: Metadata[], outputPath: string): Promise&lt;void&gt;</signature>
+      <path>src/services/csv-export.service.ts</path>
+    </interface>
+    <interface>
+      <name>CsvExportService.cleanupOldFiles</name>
+      <kind>service method</kind>
+      <signature>async cleanupOldFiles(maxAgeMs?: number): Promise&lt;number&gt;</signature>
+      <path>src/services/csv-export.service.ts</path>
+    </interface>
+    <interface>
+      <name>Metadata</name>
+      <kind>TypeScript interface</kind>
+      <signature>interface Metadata {
+  filename: string;
+  title: string;
+  keywords: string;
+  category: number;
+  releases?: string;
+}</signature>
+      <path>src/models/metadata.model.ts</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Testing uses Vitest framework with vi.mock for external dependencies. Tests are colocated in /tests directory with naming pattern {module}.test.ts. Each test file imports the module under test directly. Use describe/it blocks with clear BDD-style descriptions. Mock external services (csv-writer, fs operations) to test in isolation. Follow AAA pattern (Arrange, Act, Assert).
+    </standards>
+    <locations>
+      <location>tests/csv-export.service.test.ts</location>
+      <location>tests/csv.routes.test.ts (new file to create)</location>
+    </locations>
+    <ideas>
+      <idea ac="AC1">Test that generateCSV creates file with correct columns: Filename, Title, Keywords, Category, Releases</idea>
+      <idea ac="AC2">Test keywords are formatted as comma-separated string within cell, no duplicates</idea>
+      <idea ac="AC3">Test filename follows pattern adobe-stock-metadata-{timestamp}.csv</idea>
+      <idea ac="AC4">Test RFC 4180: quote fields with commas, escape quotes with doubling, handle UTF-8</idea>
+      <idea ac="AC5">Test CSV path is returned in response and accessible</idea>
+      <idea ac="AC6">Test cleanupOldFiles() deletes files older than maxAgeMs, returns count, logs operations</idea>
+      <idea ac="AC7">Test empty metadata list returns 400 with code EMPTY_METADATA and user-friendly message</idea>
+      <idea ac="AC8">Test POST /api/generate-csv accepts valid JSON, returns success response with csvFileName</idea>
+      <idea ac="AC9">Integration test: full flow from request to file creation and response</idea>
+    </ideas>
+  </tests>
+</story-context>

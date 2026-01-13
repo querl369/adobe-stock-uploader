@@ -13,6 +13,7 @@ import { CsvExportService } from '../src/services/csv-export.service';
 import { ProcessingError } from '../src/models/errors';
 import type { Metadata } from '../src/models/metadata.model';
 import fs from 'fs';
+import fsPromises from 'fs/promises';
 import path from 'path';
 
 // Create a shared mock for writeRecords that persists across calls
@@ -371,6 +372,114 @@ describe('CsvExportService', () => {
         { id: 'category', title: 'Category' },
         { id: 'releases', title: 'Releases' },
       ]);
+    });
+  });
+
+  describe('cleanupOldFiles - AC6', () => {
+    const mockFiles = ['old-file.csv', 'new-file.csv', 'not-a-csv.txt'];
+    const now = Date.now();
+    const oneDay = 24 * 60 * 60 * 1000;
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+
+    it('should delete CSV files older than maxAgeMs', async () => {
+      // Mock fs/promises
+      vi.spyOn(fsPromises, 'access').mockResolvedValue(undefined);
+      vi.spyOn(fsPromises, 'readdir').mockResolvedValue(mockFiles as any);
+      vi.spyOn(fsPromises, 'stat').mockImplementation(async (filePath: any) => {
+        const filename = path.basename(filePath as string);
+        if (filename === 'old-file.csv') {
+          // File older than 24 hours
+          return { mtimeMs: now - oneDay - 1000 } as any;
+        }
+        // New file
+        return { mtimeMs: now - 1000 } as any;
+      });
+      vi.spyOn(fsPromises, 'unlink').mockResolvedValue(undefined);
+
+      const deletedCount = await service.cleanupOldFiles();
+
+      expect(deletedCount).toBe(1);
+      expect(fsPromises.unlink).toHaveBeenCalledTimes(1);
+      expect(fsPromises.unlink).toHaveBeenCalledWith(path.join('csv_output', 'old-file.csv'));
+    });
+
+    it('should skip non-CSV files', async () => {
+      vi.spyOn(fsPromises, 'access').mockResolvedValue(undefined);
+      vi.spyOn(fsPromises, 'readdir').mockResolvedValue(['not-a-csv.txt', 'another.json'] as any);
+      vi.spyOn(fsPromises, 'stat').mockResolvedValue({ mtimeMs: now - oneDay - 1000 } as any);
+      vi.spyOn(fsPromises, 'unlink').mockResolvedValue(undefined);
+
+      const deletedCount = await service.cleanupOldFiles();
+
+      expect(deletedCount).toBe(0);
+      expect(fsPromises.unlink).not.toHaveBeenCalled();
+    });
+
+    it('should return 0 when directory does not exist', async () => {
+      vi.spyOn(fsPromises, 'access').mockRejectedValue(new Error('ENOENT'));
+
+      const deletedCount = await service.cleanupOldFiles();
+
+      expect(deletedCount).toBe(0);
+    });
+
+    it('should use custom maxAgeMs when provided', async () => {
+      const customMaxAge = 60 * 60 * 1000; // 1 hour
+
+      vi.spyOn(fsPromises, 'access').mockResolvedValue(undefined);
+      vi.spyOn(fsPromises, 'readdir').mockResolvedValue(['recent.csv', 'old.csv'] as any);
+      vi.spyOn(fsPromises, 'stat').mockImplementation(async (filePath: any) => {
+        const filename = path.basename(filePath as string);
+        if (filename === 'old.csv') {
+          // File older than 1 hour but less than 24 hours
+          return { mtimeMs: now - 2 * 60 * 60 * 1000 } as any;
+        }
+        // File less than 1 hour old
+        return { mtimeMs: now - 30 * 60 * 1000 } as any;
+      });
+      vi.spyOn(fsPromises, 'unlink').mockResolvedValue(undefined);
+
+      const deletedCount = await service.cleanupOldFiles(customMaxAge);
+
+      expect(deletedCount).toBe(1);
+      expect(fsPromises.unlink).toHaveBeenCalledWith(path.join('csv_output', 'old.csv'));
+    });
+
+    it('should continue processing when individual file deletion fails', async () => {
+      vi.spyOn(fsPromises, 'access').mockResolvedValue(undefined);
+      vi.spyOn(fsPromises, 'readdir').mockResolvedValue(['file1.csv', 'file2.csv'] as any);
+      vi.spyOn(fsPromises, 'stat').mockResolvedValue({ mtimeMs: now - oneDay - 1000 } as any);
+      vi.spyOn(fsPromises, 'unlink')
+        .mockRejectedValueOnce(new Error('Permission denied'))
+        .mockResolvedValueOnce(undefined);
+
+      const deletedCount = await service.cleanupOldFiles();
+
+      // Should have attempted both files, one succeeded
+      expect(fsPromises.unlink).toHaveBeenCalledTimes(2);
+      expect(deletedCount).toBe(1);
+    });
+
+    it('should return 0 when no files are old enough', async () => {
+      vi.spyOn(fsPromises, 'access').mockResolvedValue(undefined);
+      vi.spyOn(fsPromises, 'readdir').mockResolvedValue(['file1.csv', 'file2.csv'] as any);
+      vi.spyOn(fsPromises, 'stat').mockResolvedValue({ mtimeMs: now - 1000 } as any);
+      vi.spyOn(fsPromises, 'unlink').mockResolvedValue(undefined);
+
+      const deletedCount = await service.cleanupOldFiles();
+
+      expect(deletedCount).toBe(0);
+      expect(fsPromises.unlink).not.toHaveBeenCalled();
+    });
+
+    it('should throw ProcessingError when readdir fails', async () => {
+      vi.spyOn(fsPromises, 'access').mockResolvedValue(undefined);
+      vi.spyOn(fsPromises, 'readdir').mockRejectedValue(new Error('IO Error'));
+
+      await expect(service.cleanupOldFiles()).rejects.toThrow(ProcessingError);
     });
   });
 });

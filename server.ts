@@ -37,6 +37,9 @@ import uploadRoutes from './src/api/routes/upload.routes';
 // Import batch routes (Story 2.6: Processing Status & Progress Tracking)
 import batchRoutes from './src/api/routes/batch.routes';
 
+// Import CSV routes (Story 4.1: CSV Generation Service)
+import { csvRoutes } from './src/api/routes/csv.routes';
+
 // Import legacy file utilities (will be refactored in future stories)
 const { renameImages } = require('./src/files-manipulation');
 
@@ -92,6 +95,9 @@ app.use('/api', uploadRoutes);
 
 // Register batch routes (Story 2.6: Processing Status & Progress Tracking)
 app.use('/api', batchRoutes);
+
+// Register CSV routes (Story 4.1: CSV Generation Service)
+app.use('/api', csvRoutes);
 
 // Serve static files from Vite build
 app.use(express.static('dist'));
@@ -449,4 +455,41 @@ app.listen(PORT, () => {
     },
     'Adobe Stock Uploader server started'
   );
+
+  // Story 4.1 AC6: Run initial CSV cleanup on startup
+  services.csvExport
+    .cleanupOldFiles()
+    .then(deletedCount => {
+      if (deletedCount > 0) {
+        logger.info({ deletedCount }, 'Initial CSV cleanup completed');
+      }
+    })
+    .catch(error => {
+      logger.error({ error: error instanceof Error ? error.message : 'Unknown' }, 'Initial CSV cleanup failed');
+    });
+
+  // Story 4.1 AC6: Schedule hourly CSV cleanup
+  const CSV_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+  const csvCleanupInterval = setInterval(async () => {
+    try {
+      const deletedCount = await services.csvExport.cleanupOldFiles();
+      if (deletedCount > 0) {
+        logger.info({ deletedCount }, 'Scheduled CSV cleanup completed');
+      }
+    } catch (error) {
+      logger.error({ error: error instanceof Error ? error.message : 'Unknown' }, 'Scheduled CSV cleanup failed');
+    }
+  }, CSV_CLEANUP_INTERVAL_MS);
+
+  logger.info({ intervalMs: CSV_CLEANUP_INTERVAL_MS }, 'CSV cleanup scheduler started');
+
+  // Graceful shutdown handler
+  const shutdown = (signal: string) => {
+    logger.info({ signal }, 'Received shutdown signal, cleaning up...');
+    clearInterval(csvCleanupInterval);
+    process.exit(0);
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 });

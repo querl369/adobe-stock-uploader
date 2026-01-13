@@ -6,10 +6,22 @@
  */
 
 import { createObjectCsvWriter } from 'csv-writer';
+import fs from 'fs/promises';
+import path from 'path';
 import type { Metadata } from '@/models/metadata.model';
 import { ProcessingError } from '@/models/errors';
 import { logger } from '@/utils/logger';
 import { recordCsvExport } from '@/utils/metrics';
+
+/**
+ * Default max age for CSV cleanup (24 hours in milliseconds)
+ */
+const DEFAULT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * CSV output directory
+ */
+const CSV_OUTPUT_DIR = 'csv_output';
 
 /**
  * Service for exporting metadata to CSV files
@@ -157,5 +169,83 @@ export class CsvExportService {
       valid: invalidItems.length === 0,
       invalidItems,
     };
+  }
+
+  /**
+   * Cleans up CSV files older than the specified max age
+   * Story 4.1 AC6: Auto-cleanup of old CSV files
+   *
+   * Deletes CSV files from the /csv_output directory that are older
+   * than the specified threshold (default: 24 hours).
+   *
+   * @param maxAgeMs - Maximum age in milliseconds (default: 24 hours)
+   * @returns Number of files deleted
+   *
+   * @example
+   * // Cleanup files older than 24 hours
+   * const deletedCount = await csvExportService.cleanupOldFiles();
+   *
+   * // Cleanup files older than 1 hour
+   * const deletedCount = await csvExportService.cleanupOldFiles(60 * 60 * 1000);
+   */
+  async cleanupOldFiles(maxAgeMs: number = DEFAULT_MAX_AGE_MS): Promise<number> {
+    const now = Date.now();
+    let deletedCount = 0;
+
+    try {
+      // Check if directory exists
+      try {
+        await fs.access(CSV_OUTPUT_DIR);
+      } catch {
+        // Directory doesn't exist, nothing to clean up
+        logger.debug({ directory: CSV_OUTPUT_DIR }, 'CSV output directory does not exist, skipping cleanup');
+        return 0;
+      }
+
+      const files = await fs.readdir(CSV_OUTPUT_DIR);
+
+      for (const file of files) {
+        // Only process .csv files
+        if (!file.endsWith('.csv')) {
+          continue;
+        }
+
+        const filePath = path.join(CSV_OUTPUT_DIR, file);
+
+        try {
+          const stats = await fs.stat(filePath);
+
+          // Check if file is older than max age
+          if (now - stats.mtimeMs > maxAgeMs) {
+            await fs.unlink(filePath);
+            deletedCount++;
+            logger.info({ file, ageMs: now - stats.mtimeMs }, 'Cleaned up old CSV file');
+          }
+        } catch (error) {
+          // Log error but continue with other files
+          logger.warn(
+            { file, error: error instanceof Error ? error.message : 'Unknown' },
+            'Failed to process file during cleanup'
+          );
+        }
+      }
+
+      if (deletedCount > 0) {
+        logger.info({ deletedCount, maxAgeMs }, 'CSV cleanup completed');
+      }
+
+      return deletedCount;
+    } catch (error) {
+      logger.error(
+        { error: error instanceof Error ? error.message : 'Unknown', directory: CSV_OUTPUT_DIR },
+        'CSV cleanup failed'
+      );
+      throw new ProcessingError(
+        'CSV_CLEANUP_FAILED',
+        'Failed to clean up old CSV files',
+        500,
+        { stage: 'cleanup', originalError: error instanceof Error ? error.message : 'Unknown' }
+      );
+    }
   }
 }
