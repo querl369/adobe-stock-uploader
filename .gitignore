@@ -21,7 +21,4 @@ uploads/
 build/
 *.tsbuildinfo
 
-# Cursor rules
-.cursor/
-
 cookies.txt

@@ -71,3 +71,7 @@ Copy `.env.example` to `.env`. Required: `OPENAI_API_KEY`. Model: `gpt-5-nano`. 
 ## Formatting
 
 Prettier: single quotes, trailing commas (es5), 100 char width, 2-space indent, no parens on single arrow params.
+
+## BMAD Method v6
+
+Project uses BMAD Method v6 (`_bmad/` directory) with Claude Code slash commands in `.claude/commands/`. Key commands: `/bmad-help`, `/bmad-bmm-dev-story`, `/bmad-bmm-sprint-planning`, `/bmad-bmm-quick-spec`, `/bmad-bmm-create-story`. Planning artifacts output to `docs/`.
