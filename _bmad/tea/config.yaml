@@ -1,0 +1,22 @@
+# TEA Module Configuration
+# Manually installed from bmad-method-test-architecture-enterprise
+# Date: 2026-03-04
+
+# Inherit from BMM config
+user_name: Alex
+communication_language: English
+document_output_language: English
+output_folder: "{project-root}/docs"
+
+# TEA-specific configuration
+test_artifacts: "{project-root}/docs/test-artifacts"
+tea_use_playwright_utils: false
+tea_use_pactjs_utils: false
+tea_pact_mcp: "none"
+tea_browser_automation: "none"
+tea_execution_mode: "auto"
+tea_capability_probe: true
+test_stack_type: "fullstack"
+ci_platform: "auto"
+test_framework: "vitest"
+risk_threshold: "p1"
