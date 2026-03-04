@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { CsvExportService } from '../src/services/csv-export.service';
+import { CsvExportService, CSV_OUTPUT_DIR } from '../src/services/csv-export.service';
 import { ProcessingError } from '../src/models/errors';
 import type { Metadata } from '../src/models/metadata.model';
 import fs from 'fs';
@@ -56,6 +56,10 @@ describe('CsvExportService', () => {
         releases: 'Model Released',
       },
     ];
+
+    beforeEach(() => {
+      vi.spyOn(fsPromises, 'mkdir').mockResolvedValue(undefined);
+    });
 
     it('should generate CSV file from metadata list', async () => {
       const outputPath = '/tmp/test.csv';
@@ -127,7 +131,55 @@ describe('CsvExportService', () => {
 
       await service.generateCSV(metadataWithoutReleases, '/tmp/test.csv');
 
-      expect(mockWriteRecords).toHaveBeenCalledWith(metadataWithoutReleases);
+      expect(mockWriteRecords).toHaveBeenCalledWith([
+        expect.objectContaining({ keywords: 'test,image' }),
+      ]);
+    });
+
+    it('should deduplicate keywords before writing to CSV (AC2)', async () => {
+      const metadataWithDupes: Metadata[] = [
+        {
+          filename: 'image.jpg',
+          title: 'Test title that meets the fifty character requirement for validation purposes',
+          keywords: 'sunset,mountains,sunset,landscape,mountains',
+          category: 1045,
+        },
+      ];
+
+      await service.generateCSV(metadataWithDupes, '/tmp/test.csv');
+
+      expect(mockWriteRecords).toHaveBeenCalledWith([
+        expect.objectContaining({
+          keywords: 'sunset,mountains,landscape',
+        }),
+      ]);
+    });
+
+    it('should handle keywords with extra spaces during dedup', async () => {
+      const metadata: Metadata[] = [
+        {
+          filename: 'image.jpg',
+          title: 'Test title that meets the fifty character requirement for validation purposes',
+          keywords: 'sunset , mountains, sunset ,landscape',
+          category: 1045,
+        },
+      ];
+
+      await service.generateCSV(metadata, '/tmp/test.csv');
+
+      expect(mockWriteRecords).toHaveBeenCalledWith([
+        expect.objectContaining({
+          keywords: 'sunset,mountains,landscape',
+        }),
+      ]);
+    });
+
+    it('should ensure output directory exists before writing', async () => {
+      const outputPath = '/some/deep/path/test.csv';
+
+      await service.generateCSV(validMetadata, outputPath);
+
+      expect(fsPromises.mkdir).toHaveBeenCalledWith('/some/deep/path', { recursive: true });
     });
   });
 
@@ -136,7 +188,7 @@ describe('CsvExportService', () => {
       const validMetadata: Metadata = {
         filename: 'image.jpg',
         title: 'Valid title that meets the minimum length requirement of fifty characters',
-        keywords: 'keyword1,keyword2,keyword3',
+        keywords: 'keyword1,keyword2,keyword3,keyword4,keyword5',
         category: 1045,
       };
 
@@ -188,6 +240,66 @@ describe('CsvExportService', () => {
       expect(result.errors).toContain('Keywords are required and cannot be empty');
     });
 
+    it('should reject metadata with fewer than 5 keywords', () => {
+      const metadata: Metadata = {
+        filename: 'image.jpg',
+        title: 'Valid title that meets the minimum length requirement of fifty characters',
+        keywords: 'one,two,three',
+        category: 1045,
+      };
+
+      const result = service.validateMetadata(metadata);
+
+      expect(result.valid).toBe(false);
+      expect(result.errors).toContain(
+        'Keywords must contain at least 5 terms (Adobe Stock requirement)'
+      );
+    });
+
+    it('should reject metadata with more than 50 keywords', () => {
+      const keywords = Array.from({ length: 51 }, (_, i) => `keyword${i}`).join(',');
+      const metadata: Metadata = {
+        filename: 'image.jpg',
+        title: 'Valid title that meets the minimum length requirement of fifty characters',
+        keywords,
+        category: 1045,
+      };
+
+      const result = service.validateMetadata(metadata);
+
+      expect(result.valid).toBe(false);
+      expect(result.errors).toContain(
+        'Keywords must contain no more than 50 terms (Adobe Stock requirement)'
+      );
+    });
+
+    it('should accept metadata with exactly 5 keywords', () => {
+      const metadata: Metadata = {
+        filename: 'image.jpg',
+        title: 'Valid title that meets the minimum length requirement of fifty characters',
+        keywords: 'one,two,three,four,five',
+        category: 1045,
+      };
+
+      const result = service.validateMetadata(metadata);
+
+      expect(result.valid).toBe(true);
+    });
+
+    it('should accept metadata with exactly 50 keywords', () => {
+      const keywords = Array.from({ length: 50 }, (_, i) => `keyword${i}`).join(',');
+      const metadata: Metadata = {
+        filename: 'image.jpg',
+        title: 'Valid title that meets the minimum length requirement of fifty characters',
+        keywords,
+        category: 1045,
+      };
+
+      const result = service.validateMetadata(metadata);
+
+      expect(result.valid).toBe(true);
+    });
+
     it('should reject metadata with invalid category', () => {
       const metadata: Metadata = {
         filename: 'image.jpg',
@@ -234,7 +346,7 @@ describe('CsvExportService', () => {
       const metadata: Metadata = {
         filename: 'image.jpg',
         title: 'A'.repeat(50),
-        keywords: 'test',
+        keywords: 'one,two,three,four,five',
         category: 1,
       };
 
@@ -247,7 +359,7 @@ describe('CsvExportService', () => {
       const metadata: Metadata = {
         filename: 'image.jpg',
         title: 'A'.repeat(200),
-        keywords: 'test',
+        keywords: 'one,two,three,four,five',
         category: 1,
       };
 
@@ -277,13 +389,13 @@ describe('CsvExportService', () => {
         {
           filename: 'image1.jpg',
           title: 'Valid title that meets the minimum length requirement of fifty characters',
-          keywords: 'test1',
+          keywords: 'test1,test2,test3,test4,test5',
           category: 1,
         },
         {
           filename: 'image2.jpg',
           title: 'Another valid title that meets the minimum length requirement of fifty',
-          keywords: 'test2',
+          keywords: 'word1,word2,word3,word4,word5',
           category: 2,
         },
       ];
@@ -299,19 +411,19 @@ describe('CsvExportService', () => {
         {
           filename: 'image1.jpg',
           title: 'Valid title that meets the minimum length requirement of fifty characters',
-          keywords: 'test1',
+          keywords: 'test1,test2,test3,test4,test5',
           category: 1,
         },
         {
           filename: '', // Invalid
           title: 'Short', // Invalid
-          keywords: 'test2',
+          keywords: 'test2,test3,test4,test5,test6',
           category: 2,
         },
         {
           filename: 'image3.jpg',
           title: 'Another valid title that meets the minimum length requirement of fifty',
-          keywords: 'test3',
+          keywords: 'test3,test4,test5,test6,test7',
           category: 3,
         },
       ];
@@ -329,7 +441,7 @@ describe('CsvExportService', () => {
         {
           filename: '',
           title: 'Too short',
-          keywords: 'test1',
+          keywords: 'test1,test2,test3,test4,test5',
           category: 1,
         },
         {
@@ -403,7 +515,7 @@ describe('CsvExportService', () => {
 
       expect(deletedCount).toBe(1);
       expect(fsPromises.unlink).toHaveBeenCalledTimes(1);
-      expect(fsPromises.unlink).toHaveBeenCalledWith(path.join('csv_output', 'old-file.csv'));
+      expect(fsPromises.unlink).toHaveBeenCalledWith(path.join(CSV_OUTPUT_DIR, 'old-file.csv'));
     });
 
     it('should skip non-CSV files', async () => {
@@ -445,7 +557,7 @@ describe('CsvExportService', () => {
       const deletedCount = await service.cleanupOldFiles(customMaxAge);
 
       expect(deletedCount).toBe(1);
-      expect(fsPromises.unlink).toHaveBeenCalledWith(path.join('csv_output', 'old.csv'));
+      expect(fsPromises.unlink).toHaveBeenCalledWith(path.join(CSV_OUTPUT_DIR, 'old.csv'));
     });
 
     it('should continue processing when individual file deletion fails', async () => {

@@ -297,6 +297,28 @@ class BatchTrackingService {
   }
 
   /**
+   * Associate a CSV file with a batch record
+   * Story 4.1 AC5: Store CSV path in batch metadata
+   *
+   * @param batchId - Batch identifier
+   * @param csvPath - Relative CSV path (e.g. 'csv_output/adobe-stock-metadata-123.csv')
+   * @param csvFileName - CSV filename
+   */
+  associateCsv(batchId: string, csvPath: string, csvFileName: string): void {
+    const batch = this.batches.get(batchId);
+    if (!batch) {
+      logger.warn({ batchId }, 'Attempted to associate CSV with non-existent batch');
+      return;
+    }
+
+    batch.csvPath = csvPath;
+    batch.csvFileName = csvFileName;
+    batch.updatedAt = new Date();
+
+    logger.info({ batchId, csvFileName }, 'CSV associated with batch');
+  }
+
+  /**
    * Delete a batch
    *
    * @param batchId - Batch identifier

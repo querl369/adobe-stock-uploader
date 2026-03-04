@@ -29,8 +29,21 @@ vi.mock('../src/config/container', () => ({
   services: {
     csvExport: {
       generateCSV: vi.fn().mockResolvedValue(undefined),
+      validateMetadataList: vi.fn().mockReturnValue({ valid: true, invalidItems: [] }),
     },
   },
+}));
+
+// Mock batch tracking service
+vi.mock('../src/services/batch-tracking.service', () => ({
+  batchTrackingService: {
+    associateCsv: vi.fn(),
+  },
+}));
+
+// Mock rate limiting middleware to pass through in tests
+vi.mock('../src/api/middleware/rate-limit.middleware', () => ({
+  ipRateLimitMiddleware: (req: any, res: any, next: any) => next(),
 }));
 
 // Mock logger to avoid console output in tests
@@ -60,7 +73,7 @@ describe('CSV Routes - POST /api/generate-csv', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     app = express();
-    app.use(express.json());
+    app.use(express.json({ limit: '5mb' }));
     app.use('/api', csvRoutes);
     app.use(errorHandler);
   });
@@ -169,10 +182,7 @@ describe('CSV Routes - POST /api/generate-csv', () => {
     });
 
     it('should return 400 for missing metadataList', async () => {
-      const response = await request(app)
-        .post('/api/generate-csv')
-        .send({})
-        .expect(400);
+      const response = await request(app).post('/api/generate-csv').send({}).expect(400);
 
       expect(response.body.success).toBe(false);
       expect(response.body.error.message).toBe('No images were processed successfully');
@@ -230,6 +240,51 @@ describe('CSV Routes - POST /api/generate-csv', () => {
     });
   });
 
+  describe('Metadata Validation', () => {
+    it('should return 400 when metadata validation fails', async () => {
+      const { services } = await import('../src/config/container');
+      vi.mocked(services.csvExport.validateMetadataList).mockReturnValueOnce({
+        valid: false,
+        invalidItems: [{ index: 0, errors: ['Filename is required and cannot be empty'] }],
+      });
+
+      const response = await request(app)
+        .post('/api/generate-csv')
+        .send({ metadataList: validMetadataList })
+        .expect(400);
+
+      expect(response.body.success).toBe(false);
+      expect(response.body.error.message).toContain('Invalid metadata');
+    });
+
+    it('should call validateMetadataList before generateCSV', async () => {
+      const { services } = await import('../src/config/container');
+
+      await request(app)
+        .post('/api/generate-csv')
+        .send({ metadataList: validMetadataList })
+        .expect(200);
+
+      expect(services.csvExport.validateMetadataList).toHaveBeenCalledWith(validMetadataList);
+      expect(services.csvExport.generateCSV).toHaveBeenCalled();
+    });
+
+    it('should not call generateCSV when validation fails', async () => {
+      const { services } = await import('../src/config/container');
+      vi.mocked(services.csvExport.validateMetadataList).mockReturnValueOnce({
+        valid: false,
+        invalidItems: [{ index: 0, errors: ['Title is required'] }],
+      });
+
+      await request(app)
+        .post('/api/generate-csv')
+        .send({ metadataList: validMetadataList })
+        .expect(400);
+
+      expect(services.csvExport.generateCSV).not.toHaveBeenCalled();
+    });
+  });
+
   describe('Error Handling', () => {
     it('should return 500 when CSV generation fails', async () => {
       const { services } = await import('../src/config/container');
@@ -243,6 +298,53 @@ describe('CSV Routes - POST /api/generate-csv', () => {
         .expect(500);
 
       expect(response.body.success).toBe(false);
+    });
+  });
+
+  describe('AC5: Batch Association', () => {
+    it('should associate CSV with batch when batchId is provided', async () => {
+      const { batchTrackingService } = await import('../src/services/batch-tracking.service');
+
+      await request(app)
+        .post('/api/generate-csv')
+        .send({ metadataList: validMetadataList, batchId: 'test-batch-123' })
+        .expect(200);
+
+      expect(batchTrackingService.associateCsv).toHaveBeenCalledWith(
+        'test-batch-123',
+        expect.stringContaining('csv_output/'),
+        expect.stringMatching(/^adobe-stock-metadata-\d+\.csv$/)
+      );
+    });
+
+    it('should not call associateCsv when batchId is not provided', async () => {
+      const { batchTrackingService } = await import('../src/services/batch-tracking.service');
+
+      await request(app)
+        .post('/api/generate-csv')
+        .send({ metadataList: validMetadataList })
+        .expect(200);
+
+      expect(batchTrackingService.associateCsv).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Array Size Limit', () => {
+    it('should return 400 when metadata list exceeds 1000 items', async () => {
+      const oversizedList = Array.from({ length: 1001 }, (_, i) => ({
+        filename: `image${i}.jpg`,
+        title: 'A'.repeat(50),
+        keywords: 'a,b,c,d,e',
+        category: 1,
+      }));
+
+      const response = await request(app)
+        .post('/api/generate-csv')
+        .send({ metadataList: oversizedList })
+        .expect(400);
+
+      expect(response.body.success).toBe(false);
+      expect(response.body.error.message).toContain('Too many items');
     });
   });
 });

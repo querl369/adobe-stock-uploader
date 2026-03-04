@@ -39,6 +39,7 @@ import batchRoutes from './src/api/routes/batch.routes';
 
 // Import CSV routes (Story 4.1: CSV Generation Service)
 import { csvRoutes } from './src/api/routes/csv.routes';
+import { CSV_OUTPUT_DIR } from './src/services/csv-export.service';
 
 // Import legacy file utilities (will be refactored in future stories)
 const { renameImages } = require('./src/files-manipulation');
@@ -113,7 +114,7 @@ const upload = multer({
 });
 
 // Ensure directories exist
-['uploads', 'images', 'csv_output', 'temp'].forEach(dir => {
+[CSV_OUTPUT_DIR, 'uploads', 'images', 'temp'].forEach(dir => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -312,7 +313,7 @@ app.post(
 
     // Generate CSV file
     const csvFileName = `${initials}_${Date.now()}.csv`;
-    const csvPath = path.join('csv_output', csvFileName);
+    const csvPath = path.join(CSV_OUTPUT_DIR, csvFileName);
 
     // Prepare metadata for CSV (only successful ones)
     const successfulMetadata = metadataList
@@ -361,7 +362,7 @@ app.post(
       throw new ValidationError('CSV filename is required');
     }
 
-    const csvPath = path.join('csv_output', csvFileName);
+    const csvPath = path.join(CSV_OUTPUT_DIR, csvFileName);
 
     // Check if file exists - throw NotFoundError (Story 1.6)
     if (!fs.existsSync(csvPath)) {
@@ -446,17 +447,9 @@ app.use(errorHandler);
 // Start the Server
 // ============================================
 
-app.listen(PORT, () => {
-  logger.info(
-    {
-      port: PORT,
-      url: `http://localhost:${PORT}`,
-      nodeEnv: config.server.nodeEnv,
-    },
-    'Adobe Stock Uploader server started'
-  );
-
-  // Story 4.1 AC6: Run initial CSV cleanup on startup
+// Story 4.1 AC6: CSV cleanup scheduler (exported for testability)
+export function scheduleCsvCleanup(intervalMs: number = 60 * 60 * 1000): NodeJS.Timeout {
+  // Run initial cleanup on startup
   services.csvExport
     .cleanupOldFiles()
     .then(deletedCount => {
@@ -465,31 +458,53 @@ app.listen(PORT, () => {
       }
     })
     .catch(error => {
-      logger.error({ error: error instanceof Error ? error.message : 'Unknown' }, 'Initial CSV cleanup failed');
+      logger.error(
+        { error: error instanceof Error ? error.message : 'Unknown' },
+        'Initial CSV cleanup failed'
+      );
     });
 
-  // Story 4.1 AC6: Schedule hourly CSV cleanup
-  const CSV_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
-  const csvCleanupInterval = setInterval(async () => {
+  // Schedule periodic cleanup
+  const intervalId = setInterval(async () => {
     try {
       const deletedCount = await services.csvExport.cleanupOldFiles();
       if (deletedCount > 0) {
         logger.info({ deletedCount }, 'Scheduled CSV cleanup completed');
       }
     } catch (error) {
-      logger.error({ error: error instanceof Error ? error.message : 'Unknown' }, 'Scheduled CSV cleanup failed');
+      logger.error(
+        { error: error instanceof Error ? error.message : 'Unknown' },
+        'Scheduled CSV cleanup failed'
+      );
     }
-  }, CSV_CLEANUP_INTERVAL_MS);
+  }, intervalMs);
 
-  logger.info({ intervalMs: CSV_CLEANUP_INTERVAL_MS }, 'CSV cleanup scheduler started');
+  logger.info({ intervalMs }, 'CSV cleanup scheduler started');
+  return intervalId;
+}
 
-  // Graceful shutdown handler
-  const shutdown = (signal: string) => {
-    logger.info({ signal }, 'Received shutdown signal, cleaning up...');
-    clearInterval(csvCleanupInterval);
-    process.exit(0);
-  };
-
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT', () => shutdown('SIGINT'));
+const server = app.listen(PORT, () => {
+  logger.info(
+    {
+      port: PORT,
+      url: `http://localhost:${PORT}`,
+      nodeEnv: config.server.nodeEnv,
+    },
+    'Adobe Stock Uploader server started'
+  );
 });
+
+const csvCleanupInterval = scheduleCsvCleanup();
+
+// Graceful shutdown handler — drain in-flight requests before exiting
+const shutdown = (signal: string) => {
+  logger.info({ signal }, 'Received shutdown signal, cleaning up...');
+  clearInterval(csvCleanupInterval);
+  server.close(() => {
+    logger.info('HTTP server closed, exiting');
+    process.exit(0);
+  });
+};
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

@@ -19,9 +19,10 @@ import { recordCsvExport } from '@/utils/metrics';
 const DEFAULT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 /**
- * CSV output directory
+ * CSV output directory (absolute path)
+ * Shared constant - import this in routes and server.ts instead of hardcoding 'csv_output'
  */
-const CSV_OUTPUT_DIR = 'csv_output';
+export const CSV_OUTPUT_DIR = path.resolve('csv_output');
 
 /**
  * Service for exporting metadata to CSV files
@@ -64,6 +65,9 @@ export class CsvExportService {
         );
       }
 
+      // Ensure output directory exists before writing
+      await fs.mkdir(path.dirname(outputPath), { recursive: true });
+
       // Create CSV writer with Adobe Stock column structure
       const csvWriter = createObjectCsvWriter({
         path: outputPath,
@@ -76,8 +80,18 @@ export class CsvExportService {
         ],
       });
 
+      // AC2: Deduplicate keywords before writing to CSV
+      const deduplicatedMetadata = metadataList.map(item => ({
+        ...item,
+        keywords: item.keywords
+          ? [...new Set(item.keywords.split(',').map(k => k.trim()))]
+              .filter(k => k.length > 0)
+              .join(',')
+          : item.keywords,
+      }));
+
       // Write metadata to CSV file
-      await csvWriter.writeRecords(metadataList);
+      await csvWriter.writeRecords(deduplicatedMetadata);
 
       // Record metrics for CSV export
       const duration = (Date.now() - startTime) / 1000;
@@ -129,6 +143,16 @@ export class CsvExportService {
 
     if (!metadata.keywords || metadata.keywords.trim() === '') {
       errors.push('Keywords are required and cannot be empty');
+    } else {
+      const keywordCount = metadata.keywords
+        .split(',')
+        .map(k => k.trim())
+        .filter(k => k.length > 0).length;
+      if (keywordCount < 5) {
+        errors.push('Keywords must contain at least 5 terms (Adobe Stock requirement)');
+      } else if (keywordCount > 50) {
+        errors.push('Keywords must contain no more than 50 terms (Adobe Stock requirement)');
+      }
     }
 
     if (!metadata.category || typeof metadata.category !== 'number') {
@@ -198,7 +222,10 @@ export class CsvExportService {
         await fs.access(CSV_OUTPUT_DIR);
       } catch {
         // Directory doesn't exist, nothing to clean up
-        logger.debug({ directory: CSV_OUTPUT_DIR }, 'CSV output directory does not exist, skipping cleanup');
+        logger.debug(
+          { directory: CSV_OUTPUT_DIR },
+          'CSV output directory does not exist, skipping cleanup'
+        );
         return 0;
       }
 
@@ -240,12 +267,10 @@ export class CsvExportService {
         { error: error instanceof Error ? error.message : 'Unknown', directory: CSV_OUTPUT_DIR },
         'CSV cleanup failed'
       );
-      throw new ProcessingError(
-        'CSV_CLEANUP_FAILED',
-        'Failed to clean up old CSV files',
-        500,
-        { stage: 'cleanup', originalError: error instanceof Error ? error.message : 'Unknown' }
-      );
+      throw new ProcessingError('CSV_CLEANUP_FAILED', 'Failed to clean up old CSV files', 500, {
+        stage: 'cleanup',
+        originalError: error instanceof Error ? error.message : 'Unknown',
+      });
     }
   }
 }

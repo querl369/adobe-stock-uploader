@@ -131,6 +131,18 @@ export interface BatchState {
    * Timestamp when batch completed (success or failure)
    */
   completedAt?: Date;
+
+  /**
+   * CSV file path (relative, e.g. 'csv_output/adobe-stock-metadata-123.csv')
+   * Story 4.1 AC5: Associate CSV file with batch record
+   */
+  csvPath?: string;
+
+  /**
+   * CSV filename (e.g. 'adobe-stock-metadata-123.csv')
+   * Story 4.1 AC5: Return CSV filename to client
+   */
+  csvFileName?: string;
 }
 
 /**
