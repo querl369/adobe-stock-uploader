@@ -90,7 +90,7 @@ development_status:
   # Status: Story 4-1 in progress (2026-01-13)
   epic-4: contexted
   4-1-csv-generation-service: done
-  4-2-instant-download-endpoint: backlog
+  4-2-instant-download-endpoint: done
   4-3-batch-history-persistence: backlog
   epic-4-retrospective: optional
 

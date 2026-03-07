@@ -1,17 +1,22 @@
 /**
  * CSV API Routes
  * Story 4.1: CSV Generation Service (AC8)
+ * Story 4.2: Instant Download Endpoint
  *
- * Handles CSV generation for Adobe Stock metadata export
+ * Handles CSV generation and download for Adobe Stock metadata export
  * - POST /api/generate-csv - Generate CSV file from metadata
+ * - GET /api/download-csv/:batchId - Download CSV file by batch ID
  */
 
 import express, { Response, Router } from 'express';
+import fs from 'fs';
 import path from 'path';
 import { asyncHandler } from '../middleware/error-handler';
 import { ipRateLimitMiddleware } from '../middleware/rate-limit.middleware';
-import { ValidationError } from '../../models/errors';
+import { sessionMiddleware, SessionRequest } from '../middleware/session.middleware';
+import { ValidationError, NotFoundError } from '../../models/errors';
 import { logger } from '../../utils/logger';
+import { recordCsvDownload } from '../../utils/metrics';
 import { services } from '../../config/container';
 import { CSV_OUTPUT_DIR } from '../../services/csv-export.service';
 import { batchTrackingService } from '../../services/batch-tracking.service';
@@ -22,6 +27,11 @@ import type { Metadata } from '../../models/metadata.model';
  * Prevents memory exhaustion from oversized payloads.
  */
 const MAX_METADATA_ITEMS = 1000;
+
+/**
+ * UUID v4 format regex for batchId validation
+ */
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const router: Router = express.Router();
 
@@ -107,6 +117,101 @@ router.post(
       csvFileName,
       csvPath: relativeCsvPath,
       recordCount: metadataList.length,
+    });
+  })
+);
+
+/**
+ * GET /api/download-csv/:batchId
+ * Story 4.2: Instant Download Endpoint (AC1, AC2, AC3, AC4, AC5, AC6, AC7)
+ *
+ * Downloads the CSV file associated with a completed batch.
+ * Validates session ownership, batch existence, and path safety.
+ *
+ * @param batchId - Batch identifier (UUID)
+ * @returns CSV file download with Content-Type: text/csv
+ */
+router.get(
+  '/download-csv/:batchId',
+  ipRateLimitMiddleware,
+  sessionMiddleware,
+  asyncHandler(async (req: SessionRequest, res: Response) => {
+    const { batchId } = req.params;
+    const sessionId = req.sessionId;
+
+    if (!sessionId) {
+      throw new NotFoundError('Batch not found');
+    }
+
+    // AC3: Validate batchId UUID format
+    if (!batchId || !UUID_REGEX.test(batchId)) {
+      throw new ValidationError('Invalid batch ID format');
+    }
+
+    // AC3: Batch must exist
+    const batch = batchTrackingService.getBatch(batchId);
+    if (!batch) {
+      throw new NotFoundError('Batch not found');
+    }
+
+    // AC2: Session ownership check — return 404 (not 403) to prevent enumeration
+    if (batch.sessionId !== sessionId) {
+      logger.warn(
+        { batchId, requestSessionId: sessionId, ownerSessionId: batch.sessionId },
+        'Unauthorized download attempt: session mismatch'
+      );
+      throw new NotFoundError('Batch not found');
+    }
+
+    // AC3: Batch must have an associated CSV file
+    if (!batch.csvPath || !batch.csvFileName) {
+      throw new NotFoundError('CSV not yet generated');
+    }
+
+    // AC5: Path traversal prevention — resolve and validate
+    const absoluteCsvPath = path.resolve(batch.csvPath);
+    const resolvedOutputDir = path.resolve(CSV_OUTPUT_DIR);
+
+    if (
+      !absoluteCsvPath.startsWith(resolvedOutputDir + path.sep) &&
+      absoluteCsvPath !== resolvedOutputDir
+    ) {
+      logger.error({ batchId, csvPath: batch.csvPath }, 'Path traversal attempt detected');
+      throw new NotFoundError('CSV file not found');
+    }
+
+    // AC4: Check file exists on disk
+    if (!fs.existsSync(absoluteCsvPath)) {
+      logger.info(
+        { batchId, csvFileName: batch.csvFileName },
+        'CSV file expired or unavailable on disk'
+      );
+      throw new NotFoundError('CSV file has expired. Please reprocess your images.');
+    }
+
+    // AC1: Serve file with correct headers
+    res.setHeader('Content-Type', 'text/csv');
+    res.download(absoluteCsvPath, batch.csvFileName, err => {
+      if (err) {
+        logger.error(
+          { batchId, csvFileName: batch.csvFileName, error: err.message },
+          'Error sending CSV download'
+        );
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            error: { code: 'DOWNLOAD_ERROR', message: 'Download failed' },
+          });
+        }
+        return;
+      }
+
+      // AC6: Record download metric and log only on successful transfer
+      recordCsvDownload();
+      logger.info(
+        { batchId, sessionId, csvFileName: batch.csvFileName, timestamp: new Date().toISOString() },
+        'CSV file downloaded'
+      );
     });
   })
 );

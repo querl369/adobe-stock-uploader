@@ -348,11 +348,15 @@ app.post(
   })
 );
 
-// Endpoint: Export metadata to CSV
-// Uses asyncHandler and typed errors (Story 1.6 AC8 & AC9)
+// @deprecated Use GET /api/download-csv/:batchId instead (Story 4.2)
+// Legacy endpoint kept for backwards compatibility — no new features.
 app.post(
   '/api/export-csv',
   asyncHandler(async (req: Request, res: Response) => {
+    logger.warn(
+      'Deprecated endpoint POST /api/export-csv called — use GET /api/download-csv/:batchId'
+    );
+
     const { csvFileName } = req.body as {
       csvFileName: string;
     };

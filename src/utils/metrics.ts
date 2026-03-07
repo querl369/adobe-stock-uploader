@@ -179,6 +179,20 @@ export const retryExhaustedTotal = new Counter({
 });
 
 /**
+ * Counter: CSV download count
+ * Story 4.2: Instant Download Endpoint (AC6)
+ *
+ * Use to track:
+ * - Total CSV downloads
+ * - Download patterns and frequency
+ */
+export const csvDownloadsTotal = new Counter({
+  name: 'asu_csv_downloads_total',
+  help: 'Total number of CSV file downloads',
+  registers: [register],
+});
+
+/**
  * Metric Helper Functions
  * ========================
  */
@@ -230,6 +244,15 @@ export function recordOpenAIFailure(isRetry: boolean = false): void {
 export function recordTempUrlCreation(durationSeconds: number): void {
   processingDurationSeconds.observe({ stage: 'temp_url' }, durationSeconds);
   logger.debug({ durationSeconds }, 'Recorded temp URL creation');
+}
+
+/**
+ * Records a CSV file download
+ * Story 4.2: Instant Download Endpoint (AC6)
+ */
+export function recordCsvDownload(): void {
+  csvDownloadsTotal.inc();
+  logger.debug('Recorded CSV download');
 }
 
 /**
