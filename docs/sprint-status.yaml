@@ -2,7 +2,7 @@
 # This file tracks development progress through Epic 1-6
 
 # generated: 2025-11-11
-# last_updated: 2026-03-18 (Epic 5 sprint planning)
+# last_updated: 2026-03-19 (Story 5.1 recreated with Figma fixes)
 # project: adobe-stock-uploader
 # project_key: adobe-stock-uploader
 # tracking_system: file-system
@@ -99,7 +99,7 @@ development_status:
   # Context: Working SPA exists in client/src/app.tsx (~500 lines)
   # Dependencies: Epic 1 ✅, Epic 2 ✅, Epic 3 ✅, Epic 4 ✅
   epic-5: in-progress
-  5-1-component-architecture-and-app-decomposition: in-progress  # Story created 2026-03-18, dev 2026-03-19, code review 2026-03-19 — pending manual smoke tests
+  5-1-component-architecture-and-app-decomposition: review  # Code review in progress 2026-03-19. Story recreated with Figma layout fixes (scrollable grid, scroll fix, footer clearance)
   5-2-upload-experience-and-file-validation: backlog
   5-3-processing-view-and-real-time-status: backlog
   5-4-results-view-and-metadata-preview: backlog

@@ -1,0 +1,56 @@
+export interface UploadedImage {
+  id: string;
+  file: File;
+  preview: string;
+  description?: string;
+  title?: string;
+  keywords?: string;
+  category?: number;
+  fileId?: string;
+}
+
+export interface ProcessingState {
+  isProcessing: boolean;
+  currentIndex: number;
+  currentFileName: string;
+}
+
+export interface UploadResponse {
+  success: boolean;
+  files: Array<{ id: string; name: string; size: number }>;
+  sessionUsage: string;
+}
+
+export interface BatchStartResponse {
+  success: boolean;
+  batchId: string;
+  message: string;
+}
+
+export interface BatchImageStatus {
+  id: string;
+  filename: string;
+  status: 'pending' | 'processing' | 'success' | 'failed';
+  metadata?: {
+    title: string;
+    keywords: string;
+    category: number;
+  };
+  error?: string;
+}
+
+export interface BatchStatusResponse {
+  batchId: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  progress: {
+    total: number;
+    completed: number;
+    failed: number;
+    processing: number;
+    pending: number;
+  };
+  images: BatchImageStatus[];
+  estimatedTimeRemaining?: number;
+}
+
+export type AppView = 'upload' | 'processing' | 'results';

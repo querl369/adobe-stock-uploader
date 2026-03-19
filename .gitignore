@@ -25,3 +25,6 @@ cookies.txt
 
 # SQLite database
 data/
+
+# Stale prototype (working app is client/src/app.tsx)
+App.tsx

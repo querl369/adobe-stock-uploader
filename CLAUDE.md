@@ -40,9 +40,18 @@ There is no separate lint command. Formatting is handled by Prettier via lint-st
 
 ### Frontend (`client/`)
 
-- **`client/src/app.tsx`** — Single main React component
-- **`client/src/components/ui/`** — shadcn/ui component library (Radix-based)
-- Built with Vite + React SWC plugin, Tailwind CSS
+- **`client/src/app.tsx`** — Thin orchestrator with DropZone, view state routing, and event handlers
+- **`client/src/components/`** — AppHeader, AppFooter, UploadView, ProcessingView, ResultsView
+- **`client/src/components/ui/`** — shadcn/ui component library (Radix-based, do NOT modify)
+- **`client/src/api/client.ts`** — Typed API client (uploadImages, startBatchProcessing, getBatchStatus, cleanup)
+- **`client/src/types/index.ts`** — Shared TypeScript interfaces
+- **`client/src/utils/csv.ts`** — CSV generation and download utilities
+- Built with Vite + React SWC plugin, Tailwind CSS v4 (`@tailwindcss/vite` plugin)
+- **Note:** The root `App.tsx` is a stale prototype — ignore it. The working app is `client/src/app.tsx`
+
+### Tailwind CSS
+
+Tailwind CSS v4 with `@tailwindcss/vite` plugin generates utility classes dynamically. Source CSS is `client/src/index.css` with `@import "tailwindcss"`, `@theme inline` for shadcn/ui variables, and custom effects (grain, lava-lamp). All Tailwind utility classes work — no pre-built limitations.
 
 ### Path Aliases
 
