@@ -31,8 +31,29 @@ vi.mock('../src/config/app.config', () => ({
     openai: { apiKey: 'test-key', model: 'gpt-5-nano', maxTokens: 500, temperature: 0.3 },
     processing: { concurrencyLimit: 5, maxFileSizeMB: 50, tempFileLifetimeSeconds: 10 },
     rateLimits: { anonymous: 10, freeTier: 100 },
+    database: { path: ':memory:' },
   },
 }));
+
+// Hoisted mocks (accessible inside vi.mock factories)
+const { mockGetBatch, mockAssociateCsv, mockPersistenceGetBatchById, mockPersistenceService } =
+  vi.hoisted(() => {
+    const mockGetBatch = vi.fn();
+    const mockAssociateCsv = vi.fn();
+    const mockPersistenceGetBatchById = vi.fn().mockReturnValue(null);
+    const mockPersistenceService = {
+      getBatchById: mockPersistenceGetBatchById,
+      isAvailable: false,
+      initialize: vi.fn(),
+      persistBatch: vi.fn(),
+      getBatchesBySession: vi.fn().mockReturnValue([]),
+      isBatchOwnedBySession: vi.fn().mockReturnValue(false),
+      getExpiredBatches: vi.fn().mockReturnValue([]),
+      deleteExpiredBatches: vi.fn().mockReturnValue(0),
+      close: vi.fn(),
+    };
+    return { mockGetBatch, mockAssociateCsv, mockPersistenceGetBatchById, mockPersistenceService };
+  });
 
 // Mock services container
 vi.mock('../src/config/container', () => ({
@@ -41,11 +62,9 @@ vi.mock('../src/config/container', () => ({
       generateCSV: vi.fn().mockResolvedValue(undefined),
       validateMetadataList: vi.fn().mockReturnValue({ valid: true, invalidItems: [] }),
     },
+    batchPersistence: mockPersistenceService,
   },
 }));
-
-const mockGetBatch = vi.fn();
-const mockAssociateCsv = vi.fn();
 
 vi.mock('../src/services/batch-tracking.service', () => ({
   batchTrackingService: {
@@ -53,6 +72,9 @@ vi.mock('../src/services/batch-tracking.service', () => ({
     associateCsv: (...args: any[]) => mockAssociateCsv(...args),
   },
 }));
+
+// Mock better-sqlite3 (native module, not available in test)
+vi.mock('better-sqlite3', () => ({ default: vi.fn() }));
 
 // Mock rate limiting to pass through
 vi.mock('../src/api/middleware/rate-limit.middleware', () => ({
@@ -408,6 +430,56 @@ describe('CSV Download Route - GET /api/download-csv/:batchId', () => {
 
       expect(response.headers['retry-after']).toBe('60');
       expect(response.body.error.code).toBe('RATE_LIMIT');
+    });
+  });
+
+  describe('Story 4.3 AC7: Database Fallback', () => {
+    beforeEach(() => {
+      if (!fs.existsSync(TEST_CSV_DIR)) {
+        fs.mkdirSync(TEST_CSV_DIR, { recursive: true });
+      }
+      fs.writeFileSync(TEST_CSV_PATH, 'Filename,Title\ntest.jpg,Test\n');
+    });
+
+    afterEach(() => {
+      if (fs.existsSync(TEST_CSV_PATH)) {
+        fs.unlinkSync(TEST_CSV_PATH);
+      }
+    });
+
+    it('should serve CSV from DB fallback when in-memory batch not found', async () => {
+      // In-memory returns null
+      mockGetBatch.mockReturnValue(null);
+      // DB fallback returns a valid batch
+      mockPersistenceService.isAvailable = true;
+      mockPersistenceGetBatchById.mockReturnValue({
+        batch_id: VALID_BATCH_ID,
+        session_id: mockSessionId,
+        csv_path: `csv_output/${TEST_CSV_FILENAME}`,
+        csv_filename: TEST_CSV_FILENAME,
+        expires_at: new Date(Date.now() + 86400000).toISOString(), // valid, not expired
+      });
+
+      const response = await request(app).get(`/api/download-csv/${VALID_BATCH_ID}`).expect(200);
+
+      expect(response.headers['content-type']).toMatch(/text\/csv/);
+      expect(response.text).toContain('Filename,Title');
+
+      // Restore default
+      mockPersistenceService.isAvailable = false;
+    });
+
+    it('should return 404 for expired batch from DB fallback', async () => {
+      mockGetBatch.mockReturnValue(null);
+      mockPersistenceService.isAvailable = true;
+      // getBatchById now filters expired batches by default, returning null
+      mockPersistenceGetBatchById.mockReturnValue(null);
+
+      const response = await request(app).get(`/api/download-csv/${VALID_BATCH_ID}`).expect(404);
+
+      expect(response.body.error.message).toBe('Batch not found');
+
+      mockPersistenceService.isAvailable = false;
     });
   });
 });

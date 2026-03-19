@@ -193,6 +193,20 @@ export const csvDownloadsTotal = new Counter({
 });
 
 /**
+ * Counter: Batch cleanup operations
+ * Story 4.3: Batch History Persistence (AC4)
+ *
+ * Use to track:
+ * - Expired batch cleanup operations
+ * - Number of records and files cleaned
+ */
+export const batchCleanupTotal = new Counter({
+  name: 'asu_batch_cleanup_total',
+  help: 'Total number of expired batch cleanup operations',
+  registers: [register],
+});
+
+/**
  * Metric Helper Functions
  * ========================
  */
@@ -314,6 +328,17 @@ export function recordRetrySuccess(errorType: string): void {
 export function recordRetryExhausted(errorType: string): void {
   retryExhaustedTotal.inc({ error_type: errorType });
   logger.debug({ errorType }, 'Recorded retry exhausted');
+}
+
+/**
+ * Records a batch cleanup operation
+ * Story 4.3: Batch History Persistence (AC4)
+ *
+ * @param count - Number of expired batches cleaned up
+ */
+export function recordBatchCleanup(count: number): void {
+  batchCleanupTotal.inc(count);
+  logger.debug({ count }, 'Recorded batch cleanup');
 }
 
 /**

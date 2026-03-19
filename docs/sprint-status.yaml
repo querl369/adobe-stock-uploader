@@ -2,7 +2,7 @@
 # This file tracks development progress through Epic 1-6
 
 # generated: 2025-11-11
-# last_updated: 2025-12-01 (Sprint 3 planning)
+# last_updated: 2026-03-18 (Epic 5 sprint planning)
 # project: adobe-stock-uploader
 # project_key: adobe-stock-uploader
 # tracking_system: file-system
@@ -91,18 +91,21 @@ development_status:
   epic-4: contexted
   4-1-csv-generation-service: done
   4-2-instant-download-endpoint: done
-  4-3-batch-history-persistence: backlog
+  4-3-batch-history-persistence: done
   epic-4-retrospective: optional
 
   # Epic 5: User Interface & Experience
-  epic-5: backlog
-  5-1-landing-page-and-hero-section: backlog
-  5-2-drag-and-drop-upload-interface: backlog
-  5-3-processing-progress-visualization: backlog
-  5-4-success-screen-and-download: backlog
-  5-5-dark-mode-theme-and-visual-polish: backlog
+  # Goal: Decompose existing React prototype into production-ready UI
+  # Context: Working SPA exists in client/src/app.tsx (~500 lines)
+  # Dependencies: Epic 1 ✅, Epic 2 ✅, Epic 3 ✅, Epic 4 ✅
+  epic-5: in-progress
+  5-1-component-architecture-and-app-decomposition: in-progress  # Story created 2026-03-18, dev 2026-03-19, code review 2026-03-19 — pending manual smoke tests
+  5-2-upload-experience-and-file-validation: backlog
+  5-3-processing-view-and-real-time-status: backlog
+  5-4-results-view-and-metadata-preview: backlog
+  5-5-dark-mode-default-and-visual-polish: backlog
   5-6-responsive-design-and-mobile-optimization: backlog
-  5-7-error-states-and-user-feedback: backlog
+  5-7-error-handling-and-toast-notifications: backlog
   epic-5-retrospective: optional
 
   # Epic 6: User Account System

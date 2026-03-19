@@ -148,55 +148,70 @@ router.get(
       throw new ValidationError('Invalid batch ID format');
     }
 
-    // AC3: Batch must exist
-    const batch = batchTrackingService.getBatch(batchId);
-    if (!batch) {
+    // AC3: Batch must exist — try in-memory first, then DB fallback (Story 4.3 AC7)
+    let csvPath: string | undefined;
+    let csvFileName: string | undefined;
+    let batchSessionId: string | undefined;
+
+    const memBatch = batchTrackingService.getBatch(batchId);
+    if (memBatch) {
+      batchSessionId = memBatch.sessionId;
+      csvPath = memBatch.csvPath;
+      csvFileName = memBatch.csvFileName;
+    } else {
+      // Story 4.3 AC7: Fall back to database lookup
+      const persistenceService = services.batchPersistence;
+      if (persistenceService.isAvailable) {
+        const dbBatch = persistenceService.getBatchById(batchId);
+        if (dbBatch) {
+          batchSessionId = dbBatch.session_id;
+          csvPath = dbBatch.csv_path ?? undefined;
+          csvFileName = dbBatch.csv_filename ?? undefined;
+        }
+      }
+    }
+
+    if (!batchSessionId) {
       throw new NotFoundError('Batch not found');
     }
 
     // AC2: Session ownership check — return 404 (not 403) to prevent enumeration
-    if (batch.sessionId !== sessionId) {
+    if (batchSessionId !== sessionId) {
       logger.warn(
-        { batchId, requestSessionId: sessionId, ownerSessionId: batch.sessionId },
+        { batchId, requestSessionId: sessionId, ownerSessionId: batchSessionId },
         'Unauthorized download attempt: session mismatch'
       );
       throw new NotFoundError('Batch not found');
     }
 
     // AC3: Batch must have an associated CSV file
-    if (!batch.csvPath || !batch.csvFileName) {
+    if (!csvPath || !csvFileName) {
       throw new NotFoundError('CSV not yet generated');
     }
 
     // AC5: Path traversal prevention — resolve and validate
-    const absoluteCsvPath = path.resolve(batch.csvPath);
+    const absoluteCsvPath = path.resolve(csvPath);
     const resolvedOutputDir = path.resolve(CSV_OUTPUT_DIR);
 
     if (
       !absoluteCsvPath.startsWith(resolvedOutputDir + path.sep) &&
       absoluteCsvPath !== resolvedOutputDir
     ) {
-      logger.error({ batchId, csvPath: batch.csvPath }, 'Path traversal attempt detected');
+      logger.error({ batchId, csvPath }, 'Path traversal attempt detected');
       throw new NotFoundError('CSV file not found');
     }
 
     // AC4: Check file exists on disk
     if (!fs.existsSync(absoluteCsvPath)) {
-      logger.info(
-        { batchId, csvFileName: batch.csvFileName },
-        'CSV file expired or unavailable on disk'
-      );
+      logger.info({ batchId, csvFileName }, 'CSV file expired or unavailable on disk');
       throw new NotFoundError('CSV file has expired. Please reprocess your images.');
     }
 
     // AC1: Serve file with correct headers
     res.setHeader('Content-Type', 'text/csv');
-    res.download(absoluteCsvPath, batch.csvFileName, err => {
+    res.download(absoluteCsvPath, csvFileName, err => {
       if (err) {
-        logger.error(
-          { batchId, csvFileName: batch.csvFileName, error: err.message },
-          'Error sending CSV download'
-        );
+        logger.error({ batchId, csvFileName, error: err.message }, 'Error sending CSV download');
         if (!res.headersSent) {
           res.status(500).json({
             success: false,
@@ -209,7 +224,7 @@ router.get(
       // AC6: Record download metric and log only on successful transfer
       recordCsvDownload();
       logger.info(
-        { batchId, sessionId, csvFileName: batch.csvFileName, timestamp: new Date().toISOString() },
+        { batchId, sessionId, csvFileName, timestamp: new Date().toISOString() },
         'CSV file downloaded'
       );
     });

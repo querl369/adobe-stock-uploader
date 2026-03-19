@@ -58,7 +58,8 @@ export interface BatchProgressCounts {
   total: number;
 
   /**
-   * Number of images completed successfully
+   * Number of images done (successful + failed).
+   * To get successful only: completed - failed.
    */
   completed: number;
 

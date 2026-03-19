@@ -11,17 +11,42 @@ import express, { Response, Router } from 'express';
 import path from 'path';
 import fs from 'fs';
 import { asyncHandler } from '../middleware/error-handler';
+import { ipRateLimitMiddleware } from '../middleware/rate-limit.middleware';
 import { ValidationError, NotFoundError } from '../../models/errors';
 import { logger } from '../../utils/logger';
 import { config } from '../../config/app.config';
 import { sessionMiddleware, SessionRequest } from '../middleware/session.middleware';
 import { batchTrackingService } from '../../services/batch-tracking.service';
+import { CSV_OUTPUT_DIR } from '../../services/csv-export.service';
 import { services } from '../../config/container';
 import type { ProcessBatchRequest } from '../../models/batch.model';
+import type { BatchRow } from '../../services/batch-persistence.service';
 
 const router: Router = express.Router();
 
 const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
+
+/** UUID v4 format regex for batchId validation */
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Map a BatchRow to the API response shape, including csvAvailable check */
+function mapBatchRowToResponse(row: BatchRow) {
+  const csvAvailable =
+    !!row.csv_path && fs.existsSync(path.join(CSV_OUTPUT_DIR, path.basename(row.csv_path)));
+
+  return {
+    batchId: row.batch_id,
+    status: row.status,
+    imageCount: row.image_count,
+    successfulCount: row.successful_count,
+    failedCount: row.failed_count,
+    csvFileName: row.csv_filename,
+    createdAt: row.created_at,
+    completedAt: row.completed_at,
+    expiresAt: row.expires_at,
+    csvAvailable,
+  };
+}
 
 /**
  * GET /api/batch-status/:batchId
@@ -290,5 +315,70 @@ function getMimeType(filename: string): string {
   };
   return mimeTypes[ext] || 'application/octet-stream';
 }
+
+/**
+ * GET /api/batches
+ * Story 4.3 AC2: Batch history endpoint
+ *
+ * Returns last 10 completed batches for the current session.
+ */
+router.get(
+  '/batches',
+  ipRateLimitMiddleware,
+  sessionMiddleware,
+  asyncHandler(async (req: SessionRequest, res: Response) => {
+    const sessionId = req.sessionId!;
+    const persistenceService = services.batchPersistence;
+
+    if (!persistenceService.isAvailable) {
+      res.json({ success: true, batches: [] });
+      return;
+    }
+
+    const rows = persistenceService.getBatchesBySession(sessionId, 10);
+    const batches = rows.map(mapBatchRowToResponse);
+
+    res.json({ success: true, batches });
+  })
+);
+
+/**
+ * GET /api/batches/:batchId
+ * Story 4.3 AC3: Single batch detail endpoint
+ *
+ * Returns full batch detail. Returns 404 if not found, not owned, or expired.
+ */
+router.get(
+  '/batches/:batchId',
+  ipRateLimitMiddleware,
+  sessionMiddleware,
+  asyncHandler(async (req: SessionRequest, res: Response) => {
+    const { batchId } = req.params;
+    const sessionId = req.sessionId!;
+
+    // Validate batchId UUID format
+    if (!batchId || !UUID_REGEX.test(batchId)) {
+      throw new ValidationError('Invalid batch ID format');
+    }
+
+    const persistenceService = services.batchPersistence;
+
+    if (!persistenceService.isAvailable) {
+      throw new NotFoundError('Batch not found');
+    }
+
+    const row = persistenceService.getBatchById(batchId);
+    if (!row) {
+      throw new NotFoundError('Batch not found');
+    }
+
+    // Session ownership check — return 404 (not 403) to prevent enumeration
+    if (!persistenceService.isBatchOwnedBySession(batchId, sessionId)) {
+      throw new NotFoundError('Batch not found');
+    }
+
+    res.json({ success: true, batch: mapBatchRowToResponse(row) });
+  })
+);
 
 export default router;

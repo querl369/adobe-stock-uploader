@@ -44,6 +44,9 @@ vi.mock('../src/config/app.config', () => ({
       anonymous: 10,
       freeTier: 100,
     },
+    database: {
+      path: ':memory:',
+    },
   },
 }));
 
@@ -280,7 +283,15 @@ describe('Dependency Injection Container', () => {
       const serviceContainer = container.services;
 
       // Check that all services are present
-      const expectedServices = ['tempUrl', 'metadata', 'imageProcessing', 'csvExport', 'category']; // Story 3.2: added category
+      const expectedServices = [
+        'tempUrl',
+        'metadata',
+        'imageProcessing',
+        'csvExport',
+        'category',
+        'metadataValidation',
+        'batchPersistence',
+      ];
       const actualServices = Object.keys(serviceContainer);
 
       expectedServices.forEach(serviceName => {

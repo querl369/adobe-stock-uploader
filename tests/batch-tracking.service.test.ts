@@ -720,4 +720,88 @@ describe('BatchTrackingService - Story 2.6', () => {
       }
     });
   });
+
+  describe('Story 4.3: Persistence Integration', () => {
+    it('should call persistBatch on completion when persistence service is set', () => {
+      const mockPersistenceService = {
+        persistBatch: vi.fn(),
+        isAvailable: true,
+      };
+      batchTrackingService.setPersistenceService(mockPersistenceService);
+
+      const batch = batchTrackingService.createBatch({
+        sessionId: 'session-persist',
+        files: [{ id: 'file-1', filename: 'image1.jpg' }],
+      });
+
+      // Complete the batch
+      batchTrackingService.updateImageStatus(batch.batchId, 'file-1', 'completed');
+
+      expect(mockPersistenceService.persistBatch).toHaveBeenCalledTimes(1);
+      expect(mockPersistenceService.persistBatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          batchId: batch.batchId,
+          status: 'completed',
+        })
+      );
+    });
+
+    it('should not call persistBatch when no persistence service is set', () => {
+      // Fresh service has no persistence service — completeBatch should still work
+      const batch = batchTrackingService.createBatch({
+        sessionId: 'session-no-persist',
+        files: [{ id: 'file-1', filename: 'image1.jpg' }],
+      });
+
+      // Should not throw
+      batchTrackingService.updateImageStatus(batch.batchId, 'file-1', 'completed');
+
+      const updated = batchTrackingService.getBatch(batch.batchId);
+      expect(updated!.status).toBe('completed');
+    });
+
+    it('should not break batch completion if persistBatch throws', () => {
+      const mockPersistenceService = {
+        persistBatch: vi.fn().mockImplementation(() => {
+          throw new Error('DB write failed');
+        }),
+        isAvailable: true,
+      };
+      batchTrackingService.setPersistenceService(mockPersistenceService);
+
+      const batch = batchTrackingService.createBatch({
+        sessionId: 'session-fail-persist',
+        files: [{ id: 'file-1', filename: 'image1.jpg' }],
+      });
+
+      // Should not throw despite persistence failure
+      batchTrackingService.updateImageStatus(batch.batchId, 'file-1', 'completed');
+
+      const updated = batchTrackingService.getBatch(batch.batchId);
+      expect(updated!.status).toBe('completed');
+      expect(mockPersistenceService.persistBatch).toHaveBeenCalledTimes(1);
+    });
+
+    it('should call persistBatch for failed batches too', () => {
+      const mockPersistenceService = {
+        persistBatch: vi.fn(),
+        isAvailable: true,
+      };
+      batchTrackingService.setPersistenceService(mockPersistenceService);
+
+      const batch = batchTrackingService.createBatch({
+        sessionId: 'session-fail',
+        files: [{ id: 'file-1', filename: 'image1.jpg' }],
+      });
+
+      batchTrackingService.updateImageStatus(batch.batchId, 'file-1', 'failed', 'Error');
+
+      expect(mockPersistenceService.persistBatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          batchId: batch.batchId,
+          status: 'failed',
+        })
+      );
+    });
+  });
 });

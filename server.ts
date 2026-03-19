@@ -41,6 +41,10 @@ import batchRoutes from './src/api/routes/batch.routes';
 import { csvRoutes } from './src/api/routes/csv.routes';
 import { CSV_OUTPUT_DIR } from './src/services/csv-export.service';
 
+// Import batch persistence (Story 4.3)
+import { batchTrackingService } from './src/services/batch-tracking.service';
+import { recordBatchCleanup } from './src/utils/metrics';
+
 // Import legacy file utilities (will be refactored in future stories)
 const { renameImages } = require('./src/files-manipulation');
 
@@ -114,7 +118,7 @@ const upload = multer({
 });
 
 // Ensure directories exist
-[CSV_OUTPUT_DIR, 'uploads', 'images', 'temp'].forEach(dir => {
+[CSV_OUTPUT_DIR, 'uploads', 'images', 'temp', 'data'].forEach(dir => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -500,10 +504,60 @@ const server = app.listen(PORT, () => {
 
 const csvCleanupInterval = scheduleCsvCleanup();
 
+// Story 4.3: Wire persistence service into BatchTrackingService
+if (services.batchPersistence.isAvailable) {
+  batchTrackingService.setPersistenceService(services.batchPersistence);
+  logger.info('BatchPersistenceService wired into BatchTrackingService');
+}
+
+// Story 4.3 AC4: Batch cleanup scheduler (expired batches + CSV files)
+export function scheduleBatchCleanup(intervalMs: number = 60 * 60 * 1000): NodeJS.Timeout {
+  const intervalId = setInterval(() => {
+    try {
+      const persistenceService = services.batchPersistence;
+      if (!persistenceService.isAvailable) return;
+
+      // Step 1: Get expired batches (before deleting records)
+      const expired = persistenceService.getExpiredBatches();
+      if (expired.length > 0) {
+        // Step 2: Delete CSV files FIRST to prevent orphans
+        for (const batch of expired) {
+          if (batch.csv_path) {
+            try {
+              const csvPath = path.join(CSV_OUTPUT_DIR, path.basename(batch.csv_path));
+              if (fs.existsSync(csvPath)) {
+                fs.unlinkSync(csvPath);
+              }
+            } catch {
+              // Ignore file deletion errors
+            }
+          }
+        }
+        // Step 3: Delete DB records AFTER files are cleaned up
+        persistenceService.deleteExpiredBatches();
+        recordBatchCleanup(expired.length);
+        logger.info({ deletedCount: expired.length }, 'Expired batch cleanup completed');
+      }
+    } catch (error) {
+      logger.error(
+        { error: error instanceof Error ? error.message : 'Unknown' },
+        'Batch cleanup failed'
+      );
+    }
+  }, intervalMs);
+
+  logger.info({ intervalMs }, 'Batch cleanup scheduler started');
+  return intervalId;
+}
+
+const batchCleanupInterval = scheduleBatchCleanup();
+
 // Graceful shutdown handler — drain in-flight requests before exiting
 const shutdown = (signal: string) => {
   logger.info({ signal }, 'Received shutdown signal, cleaning up...');
   clearInterval(csvCleanupInterval);
+  clearInterval(batchCleanupInterval);
+  services.batchPersistence.close();
   server.close(() => {
     logger.info('HTTP server closed, exiting');
     process.exit(0);

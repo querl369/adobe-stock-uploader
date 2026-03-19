@@ -25,6 +25,9 @@ const envSchema = z.object({
   // Rate Limiting
   ANONYMOUS_LIMIT: z.coerce.number().default(10),
   FREE_TIER_LIMIT: z.coerce.number().default(100),
+
+  // Database
+  DB_PATH: z.string().default('data/batches.db'),
 });
 
 export type AppConfig = z.infer<typeof envSchema>;
@@ -82,6 +85,12 @@ class ConfigService {
     return {
       anonymous: this.config.ANONYMOUS_LIMIT,
       freeTier: this.config.FREE_TIER_LIMIT,
+    };
+  }
+
+  get database() {
+    return {
+      path: this.config.DB_PATH,
     };
   }
 }

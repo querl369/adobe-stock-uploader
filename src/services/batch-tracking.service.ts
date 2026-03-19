@@ -9,6 +9,7 @@
 
 import { randomUUID } from 'crypto';
 import { logger } from '@utils/logger';
+import type { BatchPersistenceService } from './batch-persistence.service';
 import type {
   BatchState,
   BatchStatus,
@@ -28,11 +29,20 @@ class BatchTrackingService {
   private batches: Map<string, BatchState> = new Map();
   private readonly BATCH_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
   private cleanupInterval?: NodeJS.Timeout;
+  private persistenceService?: BatchPersistenceService;
 
   constructor() {
     // Start cleanup job (runs every 10 minutes)
     this.startCleanupJob();
     logger.info('BatchTrackingService initialized');
+  }
+
+  /**
+   * Set the persistence service for write-behind caching of completed batches.
+   * Story 4.3: Batch History Persistence
+   */
+  setPersistenceService(service: BatchPersistenceService): void {
+    this.persistenceService = service;
   }
 
   /**
@@ -400,6 +410,18 @@ class BatchTrackingService {
       },
       'Batch processing completed'
     );
+
+    // Story 4.3: Persist completed batch to database (non-fatal)
+    if (this.persistenceService) {
+      try {
+        this.persistenceService.persistBatch(batch);
+      } catch (error) {
+        logger.warn(
+          { batchId: batch.batchId, error: error instanceof Error ? error.message : 'Unknown' },
+          'Failed to persist batch to database — continuing with in-memory only'
+        );
+      }
+    }
   }
 
   /**

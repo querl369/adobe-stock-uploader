@@ -1392,335 +1392,354 @@ interface ImageMetadata {
 
 ## Epic 5: User Interface & Experience
 
-**Goal:** Deliver an elegant, photographer-focused dark mode interface that makes the tool feel professional and trustworthy.
+**Goal:** Decompose, integrate, and polish the existing React prototype into a professional, photographer-focused dark mode interface.
 
-**Business Value:** UI quality signals tool quality. Photographers are visual creatives who appreciate beautiful design.
+**Business Value:** UI quality signals tool quality. Photographers are visual creatives who appreciate beautiful design. The existing prototype works but needs component architecture, API integration, and UX polish to feel production-ready.
+
+**Context:** A working React SPA already exists in `client/src/app.tsx` (~500 lines) with drag-and-drop upload (react-dnd), thumbnail grid, progress bar with polling, and CSV download. Dark mode CSS variables and custom animations (grain texture, lava lamp) are defined. The work is decomposition, integration with Epics 1–4 backend APIs, and polish — not greenfield development. See Sprint Change Proposal (2026-03-10) for full analysis.
 
 ---
 
-### Story 5.1: Landing Page & Hero Section
+### Story 5.1: Component Architecture & App Decomposition
 
-**As a** new visitor,
-**I want** a clear, compelling landing page,
-**So that** I immediately understand the value and can start using the tool.
+**As a** developer,
+**I want** the monolithic app.tsx decomposed into focused components with a shared API client,
+**So that** subsequent UI stories can build on clean, maintainable architecture.
 
 **Acceptance Criteria:**
 
-**Given** I visit the application homepage
-**When** the page loads
-**Then** I should see:
+**Given** the existing monolithic `client/src/app.tsx` (~500 lines)
+**When** the decomposition is complete
+**Then:**
 
-- **Hero Section:**
-  - H1: "Generate Adobe Stock Metadata with AI"
-  - Subheading: "No signup required • 100 free images/month"
-  - Large drag-and-drop zone (prominent, centered)
-  - Visual example: Animated demo of drag → process → download
-- **How It Works (3 steps):**
-  1. Drop images (up to 10, no signup)
-  2. AI generates metadata (2-3 minutes)
-  3. Download CSV for Adobe Stock
-- **Key Benefits:**
-  - "3-4x faster than competitors"
-  - "Accurate, Adobe Stock-compliant"
-  - "Try first, sign up later"
+- **Component extraction:**
+  - `UploadView` — drag-and-drop zone, file picker, thumbnail grid, image deletion
+  - `ProcessingView` — progress bar, status text, polling logic
+  - `ResultsView` — CSV download, success messaging, "process more" flow
+  - `AppHeader` and `AppFooter` — extracted from inline JSX
+  - `App` — thin orchestrator managing view state transitions (upload → processing → results)
+- **API client layer:**
+  - Create `client/src/api/` module with typed functions for each endpoint
+  - Replace all inline `fetch()` calls in components with API client calls
+  - Centralized error handling in API layer
+- **Shared types:**
+  - Create `client/src/types/` with interfaces for `UploadedImage`, `ProcessingState`, `BatchStatus`
+  - Remove duplicate type definitions from app.tsx
+- **Existing functionality preserved:**
+  - All current features (upload, process, download) work identically after decomposition
+  - No visual changes — this is a refactoring story
+  - react-dnd drag-and-drop preserved (do NOT switch to react-dropzone)
 
-**And** the design should:
-
-- Use dark mode color scheme (default)
-- Professional typography (Inter or SF Pro)
-- Generous whitespace
-- Smooth animations (subtle, purposeful)
-
-**And** the page should load in <2 seconds (TTI)
-
-**Prerequisites:** None (frontend story, parallel to backend)
+**Prerequisites:** None (first Epic 5 story)
 
 **Technical Notes:**
 
-- Create React component: `src/components/LandingPage.tsx`
-- Use Tailwind CSS for styling
-- Implement drag-and-drop with `react-dropzone`
-- Add animated example with Framer Motion or CSS animations
-- Ensure responsive design (mobile-friendly)
-- Add meta tags for SEO
+- Keep shadcn/ui component imports in leaf components
+- Use React Context or props for shared state (batch data, processing status)
+- Each view component gets its own file in `client/src/components/`
+- Existing custom CSS (grain texture, lava lamp) stays in globals.css
 
 ---
 
-### Story 5.2: Drag-and-Drop Upload Interface
+### Story 5.2: Upload Experience & File Validation
 
 **As a** user,
-**I want** a beautiful drag-and-drop interface for uploading images,
-**So that** the upload experience feels smooth and professional.
+**I want** clear feedback when selecting images — file counts, sizes, and validation errors,
+**So that** I understand what I've selected and catch problems before processing.
 
 **Acceptance Criteria:**
 
-**Given** I am on the landing page
-**When** I interact with the upload zone
-**Then** I should be able to:
+**Given** the UploadView component extracted in Story 5.1
+**When** the user interacts with the upload zone
+**Then** the following **new** features are added:
 
-- Drag and drop multiple images (1-10 files)
-- Click to open file picker dialog
-- See visual feedback on hover (highlight border)
-- See dropped files as thumbnail grid with names and sizes
-- Remove individual files before processing (X button)
+- **File validation with inline feedback:**
+  - Rejected files show inline error: "File type not supported. Use JPG, PNG, or WEBP."
+  - Oversized files show: "File too large. Maximum 50MB per image."
+  - Over-limit shows: "Too many files. Anonymous users can process 10 images."
+  - Validation errors appear near the upload zone (not alert() dialogs)
+- **Upload zone metadata display:**
+  - File count: "3 of 10 images added"
+  - Total size: "Total: 12.5 MB"
+  - Upload zone visually disabled when limit reached
+- **Thumbnail improvements:**
+  - File name and size displayed under each thumbnail
+  - Smooth appearance animation when images are added (CSS transition)
+  - Hover state shows delete button with confirmation
 
-**And** file validation should show errors:
+**Existing functionality preserved (already working):**
 
-- "File type not supported" (only JPG/PNG/WEBP)
-- "File too large" (max 50MB)
-- "Too many files" (max 10 for anonymous)
+- Drag-and-drop via react-dnd
+- Click-to-open file picker
+- Visual highlight on drag hover
+- Thumbnail grid with 4-column layout
+- Delete button on individual images
 
-**And** the upload zone should:
-
-- Display file count: "3 of 10 images added"
-- Show total size: "Total: 12.5 MB"
-- Disable when limit reached (with upgrade prompt)
-
-**And** thumbnails should be generated client-side (using FileReader)
-
-**Prerequisites:** Story 5.1 (landing page)
+**Prerequisites:** Story 5.1 (component decomposition)
 
 **Technical Notes:**
 
-- Use `react-dropzone` library
-- Create `UploadZone.tsx` component
-- Generate thumbnails with Canvas API or URL.createObjectURL
-- Implement file validation client-side (before upload)
-- Add animation for dropped files (smooth appearance)
-- Style upload zone with Tailwind (dark mode, hover states)
+- Client-side validation before any API call
+- Use existing shadcn/ui Alert or inline styled messages for validation errors
+- File size formatting utility (bytes → human readable)
+- Validation logic should live in a small utility, not inline in the component
+- Do NOT replace react-dnd with react-dropzone
 
 ---
 
-### Story 5.3: Processing Progress Visualization
+### Story 5.3: Processing View & Real-Time Status
 
 **As a** user,
-**I want** to see real-time progress while my images are processing,
-**So that** I know the system is working and can estimate completion.
+**I want** per-image status indicators and time estimates during processing,
+**So that** I can see exactly which images are done, in progress, or failed.
 
 **Acceptance Criteria:**
 
-**Given** my batch is being processed
-**When** I'm on the processing screen
-**Then** I should see:
+**Given** the ProcessingView component extracted in Story 5.1
+**When** a batch is being processed
+**Then** the following **new** features are added:
 
-- **Progress bar:** Visual percentage (0-100%)
-- **Status text:** "Processing 3 of 10 images..."
-- **Time estimate:** "About 1 minute remaining"
-- **Individual image status:**
-  - ✅ Completed (green checkmark)
-  - ⏳ Processing (spinner)
-  - ❌ Failed (red X with error icon)
-  - ⏸️ Pending (gray circle)
+- **Per-image status indicators:**
+  - Completed — green checkmark with "Done"
+  - Processing — spinner animation with "Processing..."
+  - Failed — red icon with brief error reason
+  - Pending — gray circle with "Waiting"
+  - Each image thumbnail shows its individual status overlay
+- **Enhanced progress information:**
+  - Time estimate: "About 1 minute remaining" (calculated from average per-image time)
+  - Processing speed: "~2.5s per image"
+  - Completed count: "4 of 10 images processed"
+- **Smooth transitions:**
+  - Progress bar uses CSS transition for smooth movement (not jumpy increments)
+  - Status changes animate smoothly (fade/slide)
+- **Automatic transition:**
+  - When all images complete, auto-transition to ResultsView after 1s delay
+  - If partial failures, show summary before transitioning
 
-**And** the interface should:
+**Existing functionality preserved (already working):**
 
-- Update every 2 seconds (polling `/api/batch-status/:batchId`)
-- Show smooth progress bar animation (not jumpy)
-- Display processing speed: "2.5s per image"
-- Remain responsive (no freezing)
+- Overall progress bar (shadcn/ui Progress component)
+- 2-second polling of `/api/batch-status/:batchId`
+- Status text showing current filename
+- Processing state management
 
-**And** when complete, automatically transition to success screen
-
-**Prerequisites:** Story 2.6 (status API), Story 5.2 (upload interface)
+**Prerequisites:** Story 5.1 (component decomposition), Story 2.6 (status API)
 
 **Technical Notes:**
 
-- Create `ProcessingView.tsx` component
-- Use `useEffect` with polling interval (2s)
-- Implement progress bar with Tailwind or shadcn/ui Progress component
-- Add Framer Motion for smooth animations
-- Calculate ETA based on completed images and average time
-- Handle edge cases (all failed, partial success)
+- Backend already returns per-image status and ETA in batch-status response
+- Use CSS transitions (`transition-all duration-300`) not Framer Motion
+- Status icons from lucide-react (already installed but unused)
+- Poll response includes `estimatedTimeRemaining` — wire it to the UI
+- Handle edge case: all images failed (show error summary, no auto-transition)
 
 ---
 
-### Story 5.4: Success Screen & Download
+### Story 5.4: Results View & Metadata Preview
 
 **As a** user,
-**I want** a clear success screen with prominent download button,
-**So that** I can immediately get my CSV and understand next steps.
+**I want** to see the generated metadata before downloading the CSV,
+**So that** I can verify the AI output and feel confident in the results.
 
 **Acceptance Criteria:**
 
-**Given** my batch processing completed successfully
-**When** I see the success screen
-**Then** I should see:
+**Given** the ResultsView component extracted in Story 5.1
+**When** batch processing completes
+**Then** the following **new** features are added:
 
-- **Success message:** "✅ All images processed successfully!"
-- **Primary CTA:** Large "Download CSV" button (prominent, calls attention)
-- **Results summary:**
-  - "Processed 10 images in 42 seconds"
-  - "CSV ready for Adobe Stock upload"
-- **Preview:** Sample of generated metadata (first 3 images)
-- **Next steps:**
-  - "Want more? Create free account for 100 images/month"
-  - "Need help uploading to Adobe Stock?" (link to guide)
+- **Results summary banner:**
+  - Success: "10 of 10 images processed successfully"
+  - Partial: "8 of 10 images processed (2 failed)"
+  - Total processing time: "Completed in 42 seconds"
+- **Metadata preview table:**
+  - Scrollable table showing all processed images
+  - Columns: Thumbnail, Filename, Title, Keywords (truncated), Category
+  - Failed images shown with error reason instead of metadata
+  - Uses shadcn/ui Table component
+- **Enhanced download experience:**
+  - Initials input moved to results view (closer to download action)
+  - Prominent "Download CSV" button (primary CTA)
+  - Success toast notification on download (shadcn/ui Sonner — already installed)
+  - Download does not navigate away from page
+- **Post-download actions:**
+  - "Process More Images" button — returns to upload view, clears state
+  - "Download Again" — re-downloads without re-processing
+- **Batch history integration:**
+  - Current batch appears in a "Recent Batches" section
+  - Previous batches (from backend batch-history API, Epic 4.3) listed with re-download option
 
-**And** clicking "Download CSV" should:
+**Existing functionality preserved (already working):**
 
-- Initiate instant file download
-- Show success toast: "CSV downloaded!"
-- Not navigate away from page (stay on success screen)
+- CSV generation via `/api/process-batch-v2`
+- File download trigger
+- Initials input field
+- Clear/reset functionality
 
-**And** the screen should offer:
-
-- "Process more images" button (returns to upload)
-- "Create account" button (subtle, not pushy)
-
-**Prerequisites:** Story 4.2 (download endpoint), Story 5.3 (progress view)
+**Prerequisites:** Story 5.1 (component decomposition), Story 4.2 (download endpoint), Story 4.3 (batch history)
 
 **Technical Notes:**
 
-- Create `SuccessView.tsx` component
-- Use `fetch()` to call download endpoint
-- Trigger browser download with blob URL or `<a download>` trick
-- Display metadata preview in table or card grid format
-- Add celebratory micro-animation (confetti or checkmark bounce)
-- Implement toast notifications with shadcn/ui Toast
+- Metadata preview requires storing the batch-status response data (already polled in ProcessingView)
+- Pass completed batch data from ProcessingView → ResultsView via state/context
+- Sonner toast is already in shadcn/ui components — just import and add `<Toaster />` to App
+- Batch history API: `GET /api/batches` (implemented in Epic 4.3)
+- Table should be responsive — horizontal scroll on mobile
+- No confetti or celebratory animations — keep it professional
 
 ---
 
-### Story 5.5: Dark Mode Theme & Visual Polish
+### Story 5.5: Dark Mode Default & Visual Polish
 
-**As a** user (photographer),
-**I want** a beautiful dark mode interface with professional aesthetics,
-**So that** the tool feels trustworthy and pleasant to use.
+**As a** photographer,
+**I want** the app to default to a professional dark theme with a toggle for light mode,
+**So that** the interface matches the tools I'm used to (Lightroom, Capture One).
 
 **Acceptance Criteria:**
 
-**Given** the entire application interface
-**When** applying the dark mode theme
-**Then** the design should feature:
+**Given** the existing dark mode CSS variables and custom styling
+**When** the theme is finalized
+**Then** the following changes are made:
 
-- **Color Palette:**
-  - Background: Dark gray (#0f1419 or similar)
-  - Surface: Slightly lighter gray (#1a202c)
-  - Primary: Subtle blue or purple (#3b82f6)
-  - Text: Light gray (#e2e8f0)
-  - Accent: Muted colors (not bright/garish)
-- **Typography:**
-  - Font: Inter or SF Pro (clean sans-serif)
-  - Sizes: Clear hierarchy (H1 large, body readable)
-  - Line height: Generous (1.6-1.8 for body)
-- **Spacing:**
-  - Generous whitespace
-  - Consistent padding/margins (8px grid)
-  - Not cramped or cluttered
+- **Dark mode as default:**
+  - App loads in dark mode on first visit (add `dark` class to `<html>` by default)
+  - Preference persisted to localStorage
+  - All components render correctly in dark mode (audit each extracted component)
+- **Theme toggle:**
+  - Sun/moon icon button in AppHeader
+  - Smooth transition between modes (CSS `transition` on background/color)
+  - Uses lucide-react icons (already installed)
+- **Color palette audit:**
+  - Review existing oklch() CSS variables for WCAG AA contrast (4.5:1 minimum)
+  - Fix any contrast failures in both light and dark modes
+  - Ensure shadcn/ui components inherit theme correctly
+- **Visual polish pass:**
+  - Consistent border radius across all components (align with shadcn/ui defaults)
+  - Consistent spacing (audit padding/margin for 4px/8px grid alignment)
+  - Hover states on all interactive elements
+  - Focus indicators visible in both themes (accessibility)
+- **Preserve existing styling:**
+  - Grain texture effect stays (already working)
+  - Lava lamp button animation stays (already working)
+  - No new animation libraries
 
-**And** UI elements should have:
+**Existing functionality preserved (already working):**
 
-- Subtle shadows and depth (elevation)
-- Smooth hover states (transitions)
-- Clear focus indicators (accessibility)
-- Rounded corners (modern aesthetic)
+- Dark mode CSS variables defined in index.css (oklch color space)
+- Light/dark theme structure via `.dark` class
+- Custom grain texture and lava lamp animations in globals.css
+- shadcn/ui components pre-configured for dark mode support
 
-**And** inspiration should come from:
-
-- Adobe Lightroom
-- Capture One
-- Professional photo editing tools
-
-**Prerequisites:** All Epic 5 stories (UI components)
+**Prerequisites:** Stories 5.1–5.4 (all components extracted and functional)
 
 **Technical Notes:**
 
-- Configure Tailwind dark mode (class-based)
-- Create custom color palette in `tailwind.config.js`
-- Use shadcn/ui components (pre-styled for dark mode)
-- Add CSS transitions for smooth interactions
-- Ensure WCAG AA contrast ratios (4.5:1 minimum)
-- Test with photographers for aesthetic feedback
+- Dark mode toggle: simple `document.documentElement.classList.toggle('dark')` + localStorage
+- Audit tool: Chrome DevTools accessibility panel for contrast checks
+- Do NOT add Framer Motion or any animation library
+- Keep oklch() color space — it's modern and correct
+- Test both themes end-to-end after all component work is done
 
 ---
 
 ### Story 5.6: Responsive Design & Mobile Optimization
 
-**As a** user on various devices,
-**I want** the application to work well on desktop, tablet, and mobile,
-**So that** I can use it wherever I am.
+**As a** user on a tablet or phone,
+**I want** the upload, processing, and results views to work well on smaller screens,
+**So that** I can process images from any device.
 
 **Acceptance Criteria:**
 
-**Given** the application interface
+**Given** the extracted components from Stories 5.1–5.4
 **When** viewed on different screen sizes
-**Then** it should adapt:
+**Then** the following responsive behavior is verified or added:
 
-- **Desktop (1024px+):** Full layout, side-by-side elements, large drag zone
-- **Tablet (768-1023px):** Stacked layout, reduced margins, touch-friendly buttons
-- **Mobile (320-767px):** Single column, full-width elements, simplified navigation
+- **Breakpoint audit and fixes:**
+  - Desktop (1024px+): Current layout preserved — no changes expected
+  - Tablet (768–1023px): Thumbnail grid reduces from 4 to 3 columns, margins tightened
+  - Mobile (< 768px): Single column layout, full-width elements, thumbnail grid 2 columns
+- **Touch target compliance:**
+  - All buttons minimum 44px height (tap target)
+  - Delete buttons on thumbnails enlarged on touch devices
+  - Upload zone: full-width tap area on mobile
+- **Mobile upload experience:**
+  - File picker falls back to native OS picker on mobile (already works via `<input type="file">`)
+  - Drag-and-drop zone shows "Tap to select images" text on touch devices (detect via media query or `pointer: coarse`)
+- **Metadata preview table (from 5.4):**
+  - Horizontal scroll on mobile with visual scroll hint
+  - Or collapse to card layout per image on narrow screens
+- **Header/footer on mobile:**
+  - Fixed header stays but reduces padding
+  - Footer stacks links vertically
 
-**And** key interactions should be touch-friendly:
+**Existing functionality preserved (already working):**
 
-- Upload zone: Tap to upload (no drag on mobile)
-- Buttons: Minimum 44px height (tap target size)
-- Thumbnails: Larger on mobile (easy to see)
+- Viewport meta tag in index.html
+- clamp() fluid typography for hero text
+- max-width containers (max-w-3xl, max-w-5xl, max-w-7xl)
+- Flexible layout with no hardcoded widths
 
-**And** the mobile experience should:
-
-- Load quickly (<3s on 3G)
-- Not require horizontal scrolling
-- Use native file picker on mobile devices
-
-**And** test on real devices (iOS Safari, Android Chrome)
-
-**Prerequisites:** All Epic 5 stories (UI components)
+**Prerequisites:** Stories 5.1–5.5 (all components extracted, styled, themed)
 
 **Technical Notes:**
 
-- Use Tailwind responsive utilities (`sm:`, `md:`, `lg:`)
-- Test with Chrome DevTools device emulation
-- Implement mobile-specific file input (native)
-- Optimize images and bundle size for mobile
-- Add viewport meta tag for proper scaling
-- Consider progressive web app (PWA) features (future)
+- Use Tailwind responsive utilities (`sm:`, `md:`, `lg:`) — no custom media queries
+- Test with Chrome DevTools device emulation (iPhone SE, iPad, Pixel 7)
+- No PWA features in MVP — defer to post-launch
+- No real-device testing required for MVP — emulation is sufficient
+- Bundle size is already small (Vite + React + shadcn/ui) — no special mobile optimization needed
 
 ---
 
-### Story 5.7: Error States & User Feedback
+### Story 5.7: Error Handling & Toast Notifications
 
 **As a** user,
-**I want** clear error messages and feedback for all interactions,
-**So that** I understand what went wrong and how to fix it.
+**I want** clear, non-intrusive feedback for errors and successes,
+**So that** I understand what happened without disruptive alert() popups.
 
 **Acceptance Criteria:**
 
-**Given** various error scenarios
-**When** errors occur
-**Then** users should see clear, actionable messages:
+**Given** the extracted components from Stories 5.1–5.4
+**When** errors or notable events occur
+**Then** the following replaces existing alert() calls:
 
-- **Upload errors:**
-  - "File type not supported. Use JPG, PNG, or WEBP."
-  - "File too large. Maximum 50MB per image."
-  - "Too many files. Anonymous users can process 10 images."
-- **Processing errors:**
-  - "Processing failed for 2 images. Download CSV for successful ones."
-  - "OpenAI service unavailable. Please try again in a few minutes."
-- **Rate limit errors:**
-  - "You've reached the free limit. Create an account for 100 images/month."
+- **Toast notification system:**
+  - Wire up Sonner (shadcn/ui toast — already installed, unused)
+  - Success toasts: "CSV downloaded!", "Images uploaded successfully"
+  - Error toasts: processing failures, network errors, API errors
+  - Toasts auto-dismiss after 5 seconds, can be manually dismissed
+  - Positioned bottom-right, stacking if multiple
+- **API error handling:**
+  - Network errors: "Connection lost. Check your internet and try again."
+  - Server errors (500): "Something went wrong. Please try again."
+  - Rate limit (429): "Free limit reached. Create an account for 100 images/month."
+  - Timeout: "Request timed out. Please try again."
+  - All error messages use plain language — no status codes or stack traces shown to user
+- **React error boundary:**
+  - Wrap App in an error boundary component
+  - Fallback UI: "Something unexpected happened" with "Reload" button
+  - Prevents white screen on uncaught React errors
+- **Upload validation feedback:**
+  - Already covered in Story 5.2 (inline validation)
+  - This story ensures consistency: validation = inline, operations = toast
+- **Loading states:**
+  - "Generate & Export CSV" button shows spinner while processing
+  - Upload zone shows upload progress indicator during file transfer
+  - Disable interactive elements during async operations to prevent double-clicks
 
-**And** error messages should:
+**Existing functionality to replace:**
 
-- Use plain language (not technical jargon)
-- Suggest solutions (actionable)
-- Not blame the user ("Something went wrong" not "You did X wrong")
-- Include support contact (if critical error)
+- Remove all `alert()` calls — replace with appropriate toast or inline message
+- Remove `console.error()` user-facing fallbacks — replace with toast
 
-**And** feedback should be provided via:
-
-- Toast notifications (temporary, 5s duration)
-- Inline validation (near input fields)
-- Modal dialogs (for critical errors)
-
-**Prerequisites:** All Epic 5 stories (UI components)
+**Prerequisites:** Stories 5.1–5.6 (all components built and styled)
 
 **Technical Notes:**
 
-- Create error message constants in `src/utils/error-messages.ts`
-- Use shadcn/ui Toast and Alert components
-- Implement error boundary for React crashes
-- Add Sentry integration (optional, for production monitoring)
-- Design error states for all components
-- Test edge cases thoroughly
+- Sonner is already in `client/src/components/ui/sonner.tsx` — just import and add `<Toaster />` to App
+- Error boundary is a simple class component (~30 lines)
+- No Sentry integration in MVP — defer to production monitoring epic
+- No modal dialogs for errors — toasts and inline messages are sufficient
+- Error message strings can live in the component files — no need for a separate constants file at this scale
 
 ---
 

@@ -12,5 +12,8 @@
       "Bash(less .env*)",
       "Bash(more .env*)"
     ]
+  },
+  "enabledPlugins": {
+    "frontend-design@claude-plugins-official": true
   }
 }

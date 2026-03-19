@@ -20,6 +20,7 @@ import { ImageProcessingService } from '@/services/image-processing.service';
 import { CsvExportService } from '@/services/csv-export.service';
 import { CategoryService } from '@/services/category.service';
 import { MetadataValidationService } from '@/services/metadata-validation.service';
+import { BatchPersistenceService } from '@/services/batch-persistence.service';
 import { logger } from '@/utils/logger';
 
 /**
@@ -58,6 +59,12 @@ export interface ServiceContainer {
    * Story 3.4: Metadata Validation & Quality Checks
    */
   metadataValidation: MetadataValidationService;
+
+  /**
+   * Batch persistence service for SQLite storage
+   * Story 4.3: Batch History Persistence
+   */
+  batchPersistence: BatchPersistenceService;
 }
 
 /**
@@ -96,6 +103,10 @@ class Container {
   private initializeServices(): ServiceContainer {
     logger.info('Initializing service container');
 
+    // Step 0: Initialize batch persistence (no dependencies, Story 4.3)
+    const batchPersistenceService = new BatchPersistenceService();
+    batchPersistenceService.initialize();
+
     // Step 1: Initialize services with no dependencies
     const tempUrlService = new TempUrlService();
     const categoryService = new CategoryService();
@@ -117,6 +128,7 @@ class Container {
       csvExport: csvExportService,
       category: categoryService,
       metadataValidation: metadataValidationService,
+      batchPersistence: batchPersistenceService,
     };
   }
 

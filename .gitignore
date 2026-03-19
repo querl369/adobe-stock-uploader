@@ -22,3 +22,6 @@ build/
 *.tsbuildinfo
 
 cookies.txt
+
+# SQLite database
+data/
