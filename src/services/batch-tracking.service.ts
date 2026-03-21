@@ -260,13 +260,20 @@ class BatchTrackingService {
       return;
     }
 
+    const previousStatus = image.status;
     image.result = result;
     image.status = result.success ? 'completed' : 'failed';
     if (!result.success && result.error) {
       image.error = result.error.message;
     }
 
+    // Update progress counts and check for batch completion
+    this.updateProgressCounts(batch, previousStatus, image.status);
     batch.updatedAt = new Date();
+
+    if (this.isBatchComplete(batch)) {
+      this.completeBatch(batch);
+    }
   }
 
   /**

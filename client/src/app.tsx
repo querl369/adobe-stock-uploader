@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { DndProvider, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { Input } from './components/ui/input';
@@ -12,7 +12,7 @@ import { uploadImages, startBatchProcessing, getBatchStatus, cleanup } from './a
 import { generateCSV, downloadCSV } from './utils/csv';
 import { validateFiles } from './utils/validation';
 import type { ValidationError } from './utils/validation';
-import type { UploadedImage, ProcessingState, AppView } from './types';
+import type { UploadedImage, AppView, BatchStatusResponse } from './types';
 
 function DropZone({
   children,
@@ -69,11 +69,8 @@ function App() {
   const [initials, setInitials] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [view, setView] = useState<AppView>('upload');
-  const [processing, setProcessing] = useState<ProcessingState>({
-    isProcessing: false,
-    currentIndex: 0,
-    currentFileName: '',
-  });
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [batchStatus, setBatchStatus] = useState<BatchStatusResponse | null>(null);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const validationTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
@@ -132,7 +129,10 @@ function App() {
     if (fileIds.length === 0) { alert('No files to process. Please upload images first.'); return; }
 
     setView('processing');
-    setProcessing({ isProcessing: true, currentIndex: 0, currentFileName: images[0]?.file.name || '' });
+    setBatchStatus(null);
+    setIsProcessing(true);
+
+    let lastStatusData: BatchStatusResponse | null = null;
 
     try {
       const { batchId } = await startBatchProcessing(fileIds);
@@ -142,20 +142,16 @@ function App() {
         await new Promise(resolve => setTimeout(resolve, 2000));
         const statusData = await getBatchStatus(batchId);
 
-        setProcessing({
-          isProcessing: true,
-          currentIndex: statusData.progress.completed,
-          currentFileName:
-            statusData.images.find(img => img.status === 'processing')?.filename || '',
-        });
+        lastStatusData = statusData;
+        setBatchStatus(statusData);
 
         if (statusData.status === 'completed' || statusData.status === 'failed') {
           isComplete = true;
 
-          setImages((prev: UploadedImage[]) =>
-            prev.map((img: UploadedImage) => {
+          setImages(prev =>
+            prev.map(img => {
               const r = statusData.images.find(i => i.id === img.fileId);
-              if (r?.status === 'success' && r.metadata) {
+              if (r?.status === 'completed' && r.metadata) {
                 return { ...img, title: r.metadata.title, keywords: r.metadata.keywords, category: r.metadata.category, description: r.metadata.title };
               }
               return img;
@@ -163,38 +159,45 @@ function App() {
           );
 
           const csvData = statusData.images
-            .filter(img => img.status === 'success' && img.metadata)
+            .filter(img => img.status === 'completed' && img.metadata)
             .map(img => ({ filename: img.filename, title: img.metadata!.title, keywords: img.metadata!.keywords, category: img.metadata!.category }));
 
           if (csvData.length > 0) {
             downloadCSV(generateCSV(csvData, initials), `${initials}_${Date.now()}.csv`);
           }
-
-          const successCount = statusData.progress.completed - statusData.progress.failed;
-          if (successCount > 0) {
-            alert(`Processing complete! ${successCount} of ${statusData.progress.total} images processed successfully. CSV file downloaded.`);
-          } else {
-            alert('Processing failed. No images were processed successfully.');
-          }
-          setView('results');
         }
       }
     } catch (error) {
       console.error('Error generating metadata:', error);
+
+      // Download CSV for any partially successful images before navigating away
+      if (lastStatusData) {
+        const csvData = lastStatusData.images
+          .filter(img => img.status === 'completed' && img.metadata)
+          .map(img => ({ filename: img.filename, title: img.metadata!.title, keywords: img.metadata!.keywords, category: img.metadata!.category }));
+        if (csvData.length > 0) {
+          downloadCSV(generateCSV(csvData, initials), `${initials}_${Date.now()}.csv`);
+        }
+      }
+
       alert(error instanceof Error ? error.message : 'Error generating metadata. Please try again.');
+      setBatchStatus(null);
       setView('upload');
     } finally {
-      setProcessing({ isProcessing: false, currentIndex: 0, currentFileName: '' });
+      setIsProcessing(false);
     }
   };
 
-  const handleClear = async () => {
-    images.forEach(img => URL.revokeObjectURL(img.preview));
-    setImages([]);
+  const handleClear = useCallback(() => {
+    setImages(prev => {
+      prev.forEach(img => URL.revokeObjectURL(img.preview));
+      return [];
+    });
     setInitials('');
+    setBatchStatus(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
     cleanup().catch(error => console.error('Error cleaning up server files:', error));
-  };
+  }, []);
 
   const handleDragEnter = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
   const handleDragLeave = (e: React.DragEvent) => {
@@ -207,6 +210,16 @@ function App() {
     if (image) URL.revokeObjectURL(image.preview);
     setImages(prev => prev.filter(img => img.id !== id));
   };
+
+  const handleProcessingComplete = useCallback(() => {
+    setView('results');
+    setBatchStatus(null);
+  }, []);
+
+  const handleBackToUpload = useCallback(() => {
+    handleClear();
+    setView('upload');
+  }, [handleClear]);
 
   const handleProcessMore = async () => {
     await handleClear();
@@ -233,6 +246,13 @@ function App() {
 
             {view === 'results' ? (
               <ResultsView onProcessMore={handleProcessMore} />
+            ) : view === 'processing' ? (
+              <ProcessingView
+                images={images}
+                batchStatus={batchStatus}
+                onComplete={handleProcessingComplete}
+                onBackToUpload={handleBackToUpload}
+              />
             ) : (
               <>
                 <UploadView
@@ -248,10 +268,6 @@ function App() {
                 />
 
                 <div className="w-full max-w-3xl space-y-4 px-4">
-                  {processing.isProcessing && (
-                    <ProcessingView processing={processing} totalImages={images.length} />
-                  )}
-
                   <div className="space-y-2">
                     <Label htmlFor="initials" className="tracking-[-0.01em] opacity-50 text-[0.75rem] uppercase">
                       Your Initials
@@ -264,25 +280,25 @@ function App() {
                       placeholder="e.g., OY"
                       className="grain-gradient bg-gradient-to-br from-white/80 to-white/60 border-border/20 rounded-2xl px-6 py-4 tracking-[-0.01em] text-[1rem] placeholder:opacity-30 focus:border-foreground/20 transition-all"
                       maxLength={5}
-                      disabled={processing.isProcessing}
+                      disabled={isProcessing}
                     />
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       onClick={handleGenerateMetadata}
-                      disabled={images.length === 0 || processing.isProcessing}
+                      disabled={images.length === 0 || isProcessing}
                       className="grain-gradient px-6 py-4 bg-gradient-to-b from-[#1a1a1a] to-[#0a0a0a] text-primary-foreground rounded-2xl transition-all duration-300 hover:scale-[1.01] hover:shadow-2xl active:scale-[0.99] disabled:opacity-20 disabled:cursor-not-allowed disabled:hover:scale-100 tracking-[-0.01em] text-[0.95rem] relative overflow-hidden group"
                     >
                       <span className="relative z-10">
-                        {processing.isProcessing ? 'Processing...' : 'Generate & Export CSV'}
+                        {isProcessing ? 'Processing...' : 'Generate & Export CSV'}
                       </span>
                       <div className="absolute inset-0 bg-gradient-to-t from-transparent via-white/5 to-white/10 rounded-2xl pointer-events-none" />
                       <div className="absolute inset-0 bg-white/0 group-hover:bg-white/5 rounded-2xl transition-all duration-300 pointer-events-none" />
                     </button>
                     <button
                       onClick={handleClear}
-                      disabled={processing.isProcessing}
+                      disabled={isProcessing}
                       className="grain-gradient px-6 py-4 border-2 border-border/20 rounded-2xl transition-all duration-300 hover:bg-black/5 hover:border-border/30 active:scale-[0.99] disabled:opacity-20 disabled:cursor-not-allowed tracking-[-0.01em] text-[0.95rem] bg-white/40"
                     >
                       Clear

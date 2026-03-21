@@ -30,7 +30,7 @@ export interface BatchStartResponse {
 export interface BatchImageStatus {
   id: string;
   filename: string;
-  status: 'pending' | 'processing' | 'success' | 'failed';
+  status: 'pending' | 'processing' | 'completed' | 'failed';
   metadata?: {
     title: string;
     keywords: string;

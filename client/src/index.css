@@ -169,6 +169,21 @@ html {
   left: 0;
 }
 
+/* Thin scrollbar — cross-browser */
+.thin-scrollbar {
+  scrollbar-width: thin;
+}
+.thin-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 9999px;
+}
+.thin-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 /* Fade-in slide-up animation for thumbnail cards */
 @keyframes fadeSlideIn {
   from {
