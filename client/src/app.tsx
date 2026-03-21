@@ -10,6 +10,8 @@ import { ProcessingView } from './components/ProcessingView';
 import { ResultsView } from './components/ResultsView';
 import { uploadImages, startBatchProcessing, getBatchStatus, cleanup } from './api/client';
 import { generateCSV, downloadCSV } from './utils/csv';
+import { validateFiles } from './utils/validation';
+import type { ValidationError } from './utils/validation';
 import type { UploadedImage, ProcessingState, AppView } from './types';
 
 function DropZone({
@@ -43,7 +45,7 @@ function DropZone({
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const files = Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('image/'));
+    const files = Array.from(e.dataTransfer.files);
     if (files.length > 0) {
       onFileDrop(files);
     }
@@ -72,24 +74,37 @@ function App() {
     currentIndex: 0,
     currentFileName: '',
   });
+  const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const validationTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
 
   useEffect(() => {
     cleanup().catch(error => console.error('Error during initial cleanup:', error));
     return () => {
       images.forEach(img => URL.revokeObjectURL(img.preview));
+      if (validationTimerRef.current) clearTimeout(validationTimerRef.current);
     };
   }, []);
 
   const handleFileSelect = async (files: File[]) => {
-    const imageFiles = files.filter(file => file.type.startsWith('image/'));
-    if (imageFiles.length === 0) return;
+    // Clear previous validation errors
+    if (validationTimerRef.current) clearTimeout(validationTimerRef.current);
+    setValidationErrors([]);
+
+    const { valid, errors } = validateFiles(files, images.length);
+
+    if (errors.length > 0) {
+      setValidationErrors(errors);
+      validationTimerRef.current = setTimeout(() => setValidationErrors([]), 5000);
+    }
+
+    if (valid.length === 0) return;
 
     try {
-      const result = await uploadImages(imageFiles);
+      const result = await uploadImages(valid);
       console.log('Upload successful:', result.sessionUsage);
 
-      const newImages: UploadedImage[] = imageFiles.map((file, index) => ({
+      const newImages: UploadedImage[] = valid.map((file, index) => ({
         id: Math.random().toString(36).substring(2, 11),
         file,
         preview: URL.createObjectURL(file),
@@ -106,6 +121,7 @@ function App() {
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) handleFileSelect(Array.from(e.target.files));
+    e.target.value = '';
   };
 
   const handleSelectImagesClick = () => fileInputRef.current?.click();
@@ -223,6 +239,7 @@ function App() {
                   images={images}
                   isDragging={isDragging}
                   fileInputRef={fileInputRef}
+                  validationErrors={validationErrors}
                   onSelectImagesClick={handleSelectImagesClick}
                   onFileInputChange={handleFileInputChange}
                   onDragEnter={handleDragEnter}

@@ -1,10 +1,14 @@
 import React from 'react';
 import type { UploadedImage } from '../types';
+import type { ValidationError } from '../utils/validation';
+import { MAX_IMAGE_COUNT } from '../utils/validation';
+import { formatFileSize } from '../utils/format';
 
 interface UploadViewProps {
   images: UploadedImage[];
   isDragging: boolean;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
+  validationErrors: ValidationError[];
   onSelectImagesClick: () => void;
   onFileInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onDragEnter: (e: React.DragEvent) => void;
@@ -16,12 +20,15 @@ export function UploadView({
   images,
   isDragging,
   fileInputRef,
+  validationErrors,
   onSelectImagesClick,
   onFileInputChange,
   onDragEnter,
   onDragLeave,
   onImageDelete,
 }: UploadViewProps) {
+  const atLimit = images.length >= MAX_IMAGE_COUNT;
+
   if (images.length === 0) {
     return (
       <div
@@ -33,7 +40,7 @@ export function UploadView({
           ref={fileInputRef}
           type="file"
           multiple
-          accept="image/*"
+          accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
           onChange={onFileInputChange}
           className="hidden"
         />
@@ -78,9 +85,23 @@ export function UploadView({
         {isDragging && (
           <div className="absolute inset-0 rounded-[2rem] bg-foreground/5 blur-2xl -z-10 animate-pulse" />
         )}
+
+        {/* Validation errors in empty state */}
+        {validationErrors.length > 0 && (
+          <div className="mt-4 space-y-1">
+            {validationErrors.map((err, i) => (
+              <p key={i} className="text-[0.8rem] text-red-500/80 tracking-[-0.01em]">
+                {err.fileName ? `${err.fileName}: ` : ''}
+                {err.reason}
+              </p>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
+
+  const totalSize = images.reduce((sum, img) => sum + img.file.size, 0);
 
   return (
     <div className="w-full max-w-3xl px-4">
@@ -88,33 +109,62 @@ export function UploadView({
         ref={fileInputRef}
         type="file"
         multiple
-        accept="image/*"
+        accept=".jpg,.jpeg,.png,.webp"
         onChange={onFileInputChange}
         className="hidden"
+        disabled={atLimit}
       />
-      <div className="mb-6 flex items-center justify-between">
-        <span className="tracking-[-0.01em] opacity-40 text-[0.875rem] uppercase">
-          {images.length} {images.length === 1 ? 'image' : 'images'}
-        </span>
-        <button
-          onClick={onSelectImagesClick}
-          className="text-[0.875rem] tracking-[-0.01em] opacity-60 hover:opacity-100 transition-opacity underline underline-offset-2"
-        >
-          Add more images
-        </button>
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <span className="tracking-[-0.01em] opacity-40 text-[0.875rem] uppercase">
+            {images.length} of {MAX_IMAGE_COUNT} images added
+          </span>
+          <span className="tracking-[-0.01em] opacity-30 text-[0.8rem]">
+            Total: {formatFileSize(totalSize)}
+          </span>
+        </div>
+        {atLimit ? (
+          <span className="text-[0.875rem] tracking-[-0.01em] opacity-30">Limit reached</span>
+        ) : (
+          <button
+            onClick={onSelectImagesClick}
+            className="text-[0.875rem] tracking-[-0.01em] opacity-60 hover:opacity-100 transition-opacity underline underline-offset-2"
+          >
+            Add more images
+          </button>
+        )}
       </div>
+
+      {/* Validation errors */}
+      {validationErrors.length > 0 && (
+        <div className="mb-4 space-y-1">
+          {validationErrors.map((err, i) => (
+            <p key={i} className="text-[0.8rem] text-red-500/80 tracking-[-0.01em]">
+              {err.fileName ? `${err.fileName}: ` : ''}
+              {err.reason}
+            </p>
+          ))}
+        </div>
+      )}
+
       <div className="max-h-[400px] overflow-y-auto pr-3 -mr-3" style={{ scrollbarWidth: 'thin' }}>
         <div className="grid grid-cols-4 gap-4 pb-2">
           {images.map(image => (
             <div
               key={image.id}
-              className="grain-gradient relative aspect-square rounded-2xl overflow-hidden bg-gradient-to-br from-white/60 to-white/40 border-2 border-border/20 group hover:scale-[1.02] transition-all duration-300"
+              className="grain-gradient relative rounded-2xl overflow-hidden bg-gradient-to-br from-white/60 to-white/40 border-2 border-border/20 group hover:scale-[1.02] transition-all duration-300 animate-[fadeSlideIn_300ms_ease-out_both]"
             >
-              <img
-                src={image.preview}
-                alt={image.file.name}
-                className="w-full h-full object-cover"
-              />
+              <div className="aspect-square">
+                <img
+                  src={image.preview}
+                  alt={image.file.name}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="px-2 py-1.5 space-y-0.5">
+                <p className="text-[0.7rem] opacity-60 truncate">{image.file.name}</p>
+                <p className="text-[0.65rem] opacity-40">{formatFileSize(image.file.size)}</p>
+              </div>
               <button
                 onClick={() => onImageDelete(image.id)}
                 className="absolute top-3 right-3 w-7 h-7 bg-black/80 backdrop-blur-sm text-white rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200 flex items-center justify-center hover:bg-black hover:scale-110"
