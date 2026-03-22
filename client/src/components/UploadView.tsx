@@ -66,7 +66,7 @@ export function UploadView({
             onClick={onSelectImagesClick}
             className="lava-button grain-gradient relative z-10 px-16 py-5 bg-gradient-to-b from-[#1a1a1a] to-[#0a0a0a] text-primary-foreground rounded-full transition-all duration-300 hover:scale-[1.03] hover:shadow-2xl active:scale-[0.98] cursor-pointer select-none group overflow-hidden"
           >
-            <span className="relative z-10 tracking-[-0.02em] text-[1.125rem]">Select Images</span>
+            <span className="relative z-10 tracking-[-0.02em] text-[1.325rem]">Select Images</span>
             <div className="absolute inset-0 bg-gradient-to-t from-transparent via-white/5 to-white/10 rounded-full pointer-events-none z-10" />
             <div className="absolute inset-0 bg-white/0 group-hover:bg-white/5 rounded-full transition-all duration-300 pointer-events-none z-10" />
           </button>

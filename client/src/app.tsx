@@ -231,13 +231,13 @@ function App() {
       <div className="grain min-h-screen bg-gradient-to-br from-[#fafafa] via-[#f5f5f5] to-[#efefef]">
         <AppHeader />
         <DropZone onFileDrop={handleFileSelect}>
-          <div className="flex flex-col items-center gap-8 max-w-5xl w-full pt-32 pb-32">
+          <div className="flex flex-col items-center gap-8 max-w-5xl w-full pt-20 pb-32">
             {/* Hero Section */}
             <div className="text-center space-y-2 max-w-3xl px-4">
               <h1 className="tracking-[-0.04em] opacity-95 text-[clamp(2.5rem,5vw,4rem)] leading-[1.1]">
                 Generate Metadata
                 <br />
-                For Your Images
+                For <span style={{ fontFamily: "'Source Sans 3', sans-serif", fontWeight: 700, color: '#E8112D' }}>Adobe Stock</span> Images
               </h1>
               <p className="opacity-40 tracking-[-0.01em] text-[clamp(1rem,2vw,1.25rem)] max-w-xl mx-auto">
                 AI-powered descriptions, exported instantly
