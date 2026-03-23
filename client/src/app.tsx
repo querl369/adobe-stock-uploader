@@ -139,7 +139,6 @@ function App() {
       let isComplete = false;
 
       while (!isComplete) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
         const statusData = await getBatchStatus(batchId);
 
         lastStatusData = statusData;
@@ -165,6 +164,10 @@ function App() {
           if (csvData.length > 0) {
             downloadCSV(generateCSV(csvData, initials), `${initials}_${Date.now()}.csv`);
           }
+        }
+
+        if (!isComplete) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
     } catch (error) {
@@ -221,8 +224,8 @@ function App() {
     setView('upload');
   }, [handleClear]);
 
-  const handleProcessMore = async () => {
-    await handleClear();
+  const handleProcessMore = () => {
+    handleClear();
     setView('upload');
   };
 

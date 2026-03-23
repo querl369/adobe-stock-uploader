@@ -26,7 +26,7 @@ export function ProcessingView({
   const [startTime] = useState(() => Date.now());
   const statusMap = useMemo(
     () => (batchStatus ? new Map(batchStatus.images.map(bi => [bi.id, bi])) : new Map()),
-    [batchStatus?.images]
+    [batchStatus]
   );
 
   // Auto-transition on completion
@@ -64,7 +64,7 @@ export function ProcessingView({
 
   // Processing speed calculation
   const elapsed = (Date.now() - startTime) / 1000;
-  const avgSpeed = successCount > 0 ? elapsed / successCount : 0;
+  const avgSpeed = progress.completed > 0 ? elapsed / progress.completed : 0;
 
   return (
     <div className="w-full max-w-3xl px-4 space-y-4">
@@ -97,7 +97,7 @@ export function ProcessingView({
             )}
             {batchStatus.estimatedTimeRemaining != null &&
               batchStatus.estimatedTimeRemaining > 0 && (
-                <span>{formatTimeRemaining(Math.max(0, batchStatus.estimatedTimeRemaining))}</span>
+                <span>{formatTimeRemaining(batchStatus.estimatedTimeRemaining)}</span>
               )}
           </div>
         )}

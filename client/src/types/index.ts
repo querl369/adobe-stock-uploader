@@ -9,12 +9,6 @@ export interface UploadedImage {
   fileId?: string;
 }
 
-export interface ProcessingState {
-  isProcessing: boolean;
-  currentIndex: number;
-  currentFileName: string;
-}
-
 export interface UploadResponse {
   success: boolean;
   files: Array<{ id: string; name: string; size: number }>;
