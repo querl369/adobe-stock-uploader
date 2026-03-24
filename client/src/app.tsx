@@ -72,6 +72,7 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [batchStatus, setBatchStatus] = useState<BatchStatusResponse | null>(null);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
+  const [processingDuration, setProcessingDuration] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const validationTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
 
@@ -128,8 +129,10 @@ function App() {
     const fileIds = images.map(img => img.fileId).filter((id): id is string => id !== undefined);
     if (fileIds.length === 0) { alert('No files to process. Please upload images first.'); return; }
 
+    const startTime = Date.now();
     setView('processing');
     setBatchStatus(null);
+    setProcessingDuration(null);
     setIsProcessing(true);
 
     let lastStatusData: BatchStatusResponse | null = null;
@@ -164,6 +167,8 @@ function App() {
           if (csvData.length > 0) {
             downloadCSV(generateCSV(csvData, initials), `${initials}_${Date.now()}.csv`);
           }
+
+          setProcessingDuration(Math.round((Date.now() - startTime) / 1000));
         }
 
         if (!isComplete) {
@@ -198,6 +203,7 @@ function App() {
     });
     setInitials('');
     setBatchStatus(null);
+    setProcessingDuration(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
     cleanup().catch(error => console.error('Error cleaning up server files:', error));
   }, []);
@@ -216,7 +222,6 @@ function App() {
 
   const handleProcessingComplete = useCallback(() => {
     setView('results');
-    setBatchStatus(null);
   }, []);
 
   const handleBackToUpload = useCallback(() => {
@@ -224,10 +229,19 @@ function App() {
     setView('upload');
   }, [handleClear]);
 
-  const handleProcessMore = () => {
-    handleClear();
-    setView('upload');
-  };
+  const handleDownloadCsv = useCallback(() => {
+    const csvData = images
+      .filter(img => img.title && img.keywords && img.category)
+      .map(img => ({
+        filename: img.file.name,
+        title: img.title!,
+        keywords: img.keywords!,
+        category: img.category!,
+      }));
+    if (csvData.length > 0) {
+      downloadCSV(generateCSV(csvData, initials), `${initials}_${Date.now()}.csv`);
+    }
+  }, [images, initials]);
 
   return (
     <DndProvider backend={HTML5Backend}>
@@ -248,7 +262,15 @@ function App() {
             </div>
 
             {view === 'results' ? (
-              <ResultsView onProcessMore={handleProcessMore} />
+              <ResultsView
+                images={images}
+                batchStatus={batchStatus}
+                initials={initials}
+                processingDuration={processingDuration}
+                onInitialsChange={setInitials}
+                onDownloadCsv={handleDownloadCsv}
+                onProcessMore={handleBackToUpload}
+              />
             ) : view === 'processing' ? (
               <ProcessingView
                 images={images}

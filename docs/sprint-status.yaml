@@ -101,11 +101,11 @@ development_status:
   epic-5: in-progress
   5-1-component-architecture-and-app-decomposition: done  # Code review approved 2026-03-19. Story recreated with Figma layout fixes (scrollable grid, scroll fix, footer clearance)
   5-2-upload-experience-and-file-validation: done  # Code review approved 2026-03-21. All ACs implemented, 3M issues fixed, build + 965 tests pass
-  5-3-processing-view-and-real-time-status: ready-for-dev  # Story context created 2026-03-21
-  5-4-results-view-and-metadata-preview: backlog
+  5-3-processing-view-and-real-time-status: done  # Story context created 2026-03-21
+  5-4-results-view-and-metadata-preview: done  # Code review approved 2026-03-23. 8 issues fixed (1H, 3M, 4L)
   5-5-dark-mode-default-and-visual-polish: backlog
   5-6-responsive-design-and-mobile-optimization: backlog
-  5-7-error-handling-and-toast-notifications: backlog
+  5-7-error-handling-and-toast-notifications: ready-for-dev
   epic-5-retrospective: optional
 
   # Epic 6: User Account System
