@@ -7,6 +7,7 @@ import { formatFileSize } from '../utils/format';
 interface UploadViewProps {
   images: UploadedImage[];
   isDragging: boolean;
+  isUploading: boolean;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   validationErrors: ValidationError[];
   onSelectImagesClick: () => void;
@@ -19,6 +20,7 @@ interface UploadViewProps {
 export function UploadView({
   images,
   isDragging,
+  isUploading,
   fileInputRef,
   validationErrors,
   onSelectImagesClick,
@@ -64,9 +66,12 @@ export function UploadView({
           {/* Main Button */}
           <button
             onClick={onSelectImagesClick}
-            className="lava-button grain-gradient relative z-10 px-16 py-5 bg-gradient-to-b from-[#1a1a1a] to-[#0a0a0a] text-primary-foreground rounded-full transition-all duration-300 hover:scale-[1.03] hover:shadow-2xl active:scale-[0.98] cursor-pointer select-none group overflow-hidden"
+            disabled={isUploading}
+            className="lava-button grain-gradient relative z-10 px-16 py-5 bg-gradient-to-b from-[#1a1a1a] to-[#0a0a0a] text-primary-foreground rounded-full transition-all duration-300 hover:scale-[1.03] hover:shadow-2xl active:scale-[0.98] cursor-pointer select-none group overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
           >
-            <span className="relative z-10 tracking-[-0.02em] text-[1.325rem]">Select Images</span>
+            <span className="relative z-10 tracking-[-0.02em] text-[1.325rem]">
+              {isUploading ? 'Uploading...' : 'Select Images'}
+            </span>
             <div className="absolute inset-0 bg-gradient-to-t from-transparent via-white/5 to-white/10 rounded-full pointer-events-none z-10" />
             <div className="absolute inset-0 bg-white/0 group-hover:bg-white/5 rounded-full transition-all duration-300 pointer-events-none z-10" />
           </button>
@@ -112,7 +117,7 @@ export function UploadView({
         accept=".jpg,.jpeg,.png,.webp"
         onChange={onFileInputChange}
         className="hidden"
-        disabled={atLimit}
+        disabled={atLimit || isUploading}
       />
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -125,6 +130,8 @@ export function UploadView({
         </div>
         {atLimit ? (
           <span className="text-[0.875rem] tracking-[-0.01em] opacity-30">Limit reached</span>
+        ) : isUploading ? (
+          <span className="text-[0.875rem] tracking-[-0.01em] opacity-30">Uploading...</span>
         ) : (
           <button
             onClick={onSelectImagesClick}

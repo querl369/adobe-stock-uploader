@@ -15,12 +15,39 @@ export class ApiError extends Error {
   }
 }
 
+async function categorizeHttpError(
+  response: Response,
+  fallbackMessage = 'Request failed'
+): Promise<never> {
+  if (response.status === 429) {
+    throw new ApiError('Free limit reached. Create an account for 100 images/month.', 429);
+  }
+  if (response.status === 408 || response.status === 504) {
+    throw new ApiError('Request timed out. Please try again.', response.status);
+  }
+  if (response.status >= 500) {
+    throw new ApiError('Something went wrong. Please try again.', response.status);
+  }
+  const errorData = await response.json().catch(() => ({ message: fallbackMessage }));
+  throw new ApiError(errorData.message || 'Something went wrong', response.status);
+}
+
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ message: 'Request failed' }));
-    throw new ApiError(errorData.message || 'Request failed', response.status);
+    await categorizeHttpError(response);
   }
   return response.json();
+}
+
+async function safeFetch(input: RequestInfo, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error;
+    }
+    throw new ApiError('Connection lost. Check your internet and try again.', 0);
+  }
 }
 
 export async function uploadImages(files: File[]): Promise<UploadResponse> {
@@ -29,7 +56,7 @@ export async function uploadImages(files: File[]): Promise<UploadResponse> {
     formData.append('images', file);
   });
 
-  const response = await fetch('/api/upload-images', {
+  const response = await safeFetch('/api/upload-images', {
     method: 'POST',
     body: formData,
   });
@@ -38,7 +65,7 @@ export async function uploadImages(files: File[]): Promise<UploadResponse> {
 }
 
 export async function startBatchProcessing(fileIds: string[]): Promise<BatchStartResponse> {
-  const response = await fetch('/api/process-batch-v2', {
+  const response = await safeFetch('/api/process-batch-v2', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ fileIds }),
@@ -48,29 +75,28 @@ export async function startBatchProcessing(fileIds: string[]): Promise<BatchStar
 }
 
 export async function getBatchStatus(batchId: string): Promise<BatchStatusResponse> {
-  const response = await fetch(`/api/batch-status/${batchId}`);
+  const response = await safeFetch(`/api/batch-status/${batchId}`);
   return handleResponse<BatchStatusResponse>(response);
 }
 
 export async function cleanup(): Promise<void> {
-  const response = await fetch('/api/cleanup', { method: 'POST' });
+  const response = await safeFetch('/api/cleanup', { method: 'POST' });
   if (!response.ok) {
-    throw new ApiError('Cleanup failed', response.status);
+    await categorizeHttpError(response, 'Cleanup failed');
   }
 }
 
 export async function getBatches(options?: {
   signal?: AbortSignal;
 }): Promise<BatchHistoryResponse> {
-  const response = await fetch('/api/batches', { signal: options?.signal });
+  const response = await safeFetch('/api/batches', { signal: options?.signal });
   return handleResponse<BatchHistoryResponse>(response);
 }
 
 export async function downloadBatchCsv(batchId: string): Promise<void> {
-  const response = await fetch(`/api/download-csv/${batchId}`);
+  const response = await safeFetch(`/api/download-csv/${batchId}`);
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ message: 'Download failed' }));
-    throw new ApiError(errorData.message || 'Download failed', response.status);
+    await categorizeHttpError(response, 'Download failed');
   }
   const blob = await response.blob();
   const disposition = response.headers.get('Content-Disposition');

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { toast } from 'sonner';
 import { Download, Clock, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from './ui/table';
 import { Input } from './ui/input';
@@ -72,16 +73,22 @@ export function ResultsView({
   }, []);
 
   const handleDownload = useCallback(() => {
-    onDownloadCsv();
-    setDownloadFeedback(true);
-    if (downloadTimerRef.current) clearTimeout(downloadTimerRef.current);
-    downloadTimerRef.current = setTimeout(() => setDownloadFeedback(false), 2000);
+    try {
+      onDownloadCsv();
+      toast.success('CSV downloaded!');
+      setDownloadFeedback(true);
+      if (downloadTimerRef.current) clearTimeout(downloadTimerRef.current);
+      downloadTimerRef.current = setTimeout(() => setDownloadFeedback(false), 2000);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to download CSV');
+    }
   }, [onDownloadCsv]);
 
   const handleBatchRedownload = useCallback(async (batchId: string) => {
     setRedownloadingId(batchId);
     try {
       await downloadBatchCsv(batchId);
+      toast.success('CSV downloaded!');
       setRedownloadSuccess(prev => ({ ...prev, [batchId]: true }));
       if (redownloadTimersRef.current[batchId]) {
         clearTimeout(redownloadTimersRef.current[batchId]);
@@ -97,6 +104,7 @@ export function ResultsView({
     } catch (error) {
       console.error('Failed to re-download batch CSV:', error);
       const message = error instanceof Error ? error.message : 'Download failed';
+      toast.error(message);
       setRedownloadErrors(prev => ({ ...prev, [batchId]: message }));
       if (redownloadTimersRef.current[batchId]) {
         clearTimeout(redownloadTimersRef.current[batchId]);

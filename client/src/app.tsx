@@ -1,13 +1,16 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { DndProvider, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
+import { Loader2 } from 'lucide-react';
 import { Input } from './components/ui/input';
 import { Label } from './components/ui/label';
+import { Toaster } from './components/ui/sonner';
 import { AppHeader } from './components/AppHeader';
 import { AppFooter } from './components/AppFooter';
 import { UploadView } from './components/UploadView';
 import { ProcessingView } from './components/ProcessingView';
 import { ResultsView } from './components/ResultsView';
+import { toast } from 'sonner';
 import { uploadImages, startBatchProcessing, getBatchStatus, cleanup } from './api/client';
 import { generateCSV, downloadCSV } from './utils/csv';
 import { validateFiles } from './utils/validation';
@@ -17,9 +20,11 @@ import type { UploadedImage, AppView, BatchStatusResponse } from './types';
 function DropZone({
   children,
   onFileDrop,
+  disabled,
 }: {
   children: React.ReactNode;
   onFileDrop: (files: File[]) => void;
+  disabled?: boolean;
 }) {
   const [{ isOver }, drop] = useDrop(
     () => ({
@@ -57,7 +62,7 @@ function DropZone({
       onDragOver={handleDragOver}
       onDrop={handleDrop}
       className="min-h-screen flex flex-col items-center p-8 transition-all duration-300"
-      style={{ backgroundColor: isOver ? 'rgba(0, 0, 0, 0.02)' : 'transparent' }}
+      style={{ backgroundColor: isOver && !disabled ? 'rgba(0, 0, 0, 0.02)' : 'transparent' }}
     >
       {children}
     </div>
@@ -73,6 +78,7 @@ function App() {
   const [batchStatus, setBatchStatus] = useState<BatchStatusResponse | null>(null);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
   const [processingDuration, setProcessingDuration] = useState<number | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const validationTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
 
@@ -85,6 +91,8 @@ function App() {
   }, []);
 
   const handleFileSelect = async (files: File[]) => {
+    if (isUploading) return;
+
     // Clear previous validation errors
     if (validationTimerRef.current) clearTimeout(validationTimerRef.current);
     setValidationErrors([]);
@@ -98,6 +106,7 @@ function App() {
 
     if (valid.length === 0) return;
 
+    setIsUploading(true);
     try {
       const result = await uploadImages(valid);
       console.log('Upload successful:', result.sessionUsage);
@@ -111,9 +120,12 @@ function App() {
 
       setImages(prev => [...prev, ...newImages]);
       setIsDragging(false);
+      toast.success(`${valid.length} image${valid.length !== 1 ? 's' : ''} uploaded successfully`);
     } catch (error) {
       console.error('Error uploading files:', error);
-      alert(error instanceof Error ? error.message : 'Failed to upload images. Please try again.');
+      toast.error(error instanceof Error ? error.message : 'Failed to upload images. Please try again.');
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -125,9 +137,9 @@ function App() {
   const handleSelectImagesClick = () => fileInputRef.current?.click();
 
   const handleGenerateMetadata = async () => {
-    if (!initials) { alert('Please enter your initials'); return; }
+    if (!initials) { toast.error('Please enter your initials'); return; }
     const fileIds = images.map(img => img.fileId).filter((id): id is string => id !== undefined);
-    if (fileIds.length === 0) { alert('No files to process. Please upload images first.'); return; }
+    if (fileIds.length === 0) { toast.error('No files to process. Please upload images first.'); return; }
 
     const startTime = Date.now();
     setView('processing');
@@ -166,6 +178,7 @@ function App() {
 
           if (csvData.length > 0) {
             downloadCSV(generateCSV(csvData, initials), `${initials}_${Date.now()}.csv`);
+            toast.success('CSV downloaded!');
           }
 
           setProcessingDuration(Math.round((Date.now() - startTime) / 1000));
@@ -185,10 +198,11 @@ function App() {
           .map(img => ({ filename: img.filename, title: img.metadata!.title, keywords: img.metadata!.keywords, category: img.metadata!.category }));
         if (csvData.length > 0) {
           downloadCSV(generateCSV(csvData, initials), `${initials}_${Date.now()}.csv`);
+          toast.warning(`Partial results downloaded (${csvData.length} image${csvData.length !== 1 ? 's' : ''})`);
         }
       }
 
-      alert(error instanceof Error ? error.message : 'Error generating metadata. Please try again.');
+      toast.error(error instanceof Error ? error.message : 'Error generating metadata. Please try again.');
       setBatchStatus(null);
       setView('upload');
     } finally {
@@ -247,7 +261,7 @@ function App() {
     <DndProvider backend={HTML5Backend}>
       <div className="grain min-h-screen bg-gradient-to-br from-[#fafafa] via-[#f5f5f5] to-[#efefef]">
         <AppHeader />
-        <DropZone onFileDrop={handleFileSelect}>
+        <DropZone onFileDrop={handleFileSelect} disabled={isUploading}>
           <div className="flex flex-col items-center gap-8 max-w-5xl w-full pt-20 pb-32">
             {/* Hero Section */}
             <div className="text-center space-y-2 max-w-3xl px-4">
@@ -283,6 +297,7 @@ function App() {
                 <UploadView
                   images={images}
                   isDragging={isDragging}
+                  isUploading={isUploading}
                   fileInputRef={fileInputRef}
                   validationErrors={validationErrors}
                   onSelectImagesClick={handleSelectImagesClick}
@@ -315,8 +330,15 @@ function App() {
                       disabled={images.length === 0 || isProcessing}
                       className="grain-gradient px-6 py-4 bg-gradient-to-b from-[#1a1a1a] to-[#0a0a0a] text-primary-foreground rounded-2xl transition-all duration-300 hover:scale-[1.01] hover:shadow-2xl active:scale-[0.99] disabled:opacity-20 disabled:cursor-not-allowed disabled:hover:scale-100 tracking-[-0.01em] text-[0.95rem] relative overflow-hidden group"
                     >
-                      <span className="relative z-10">
-                        {isProcessing ? 'Processing...' : 'Generate & Export CSV'}
+                      <span className="relative z-10 flex items-center gap-2">
+                        {isProcessing ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Processing...
+                          </>
+                        ) : (
+                          'Generate & Export CSV'
+                        )}
                       </span>
                       <div className="absolute inset-0 bg-gradient-to-t from-transparent via-white/5 to-white/10 rounded-2xl pointer-events-none" />
                       <div className="absolute inset-0 bg-white/0 group-hover:bg-white/5 rounded-2xl transition-all duration-300 pointer-events-none" />
@@ -335,6 +357,7 @@ function App() {
           </div>
         </DropZone>
         <AppFooter />
+        <Toaster position="bottom-right" richColors closeButton duration={5000} />
       </div>
     </DndProvider>
   );
