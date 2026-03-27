@@ -1743,359 +1743,605 @@ interface ImageMetadata {
 
 ---
 
-## Epic 6: User Account System (Optional Free Tier)
+## Epic 6: User Account System
 
-**Goal:** Enable returning users to create free accounts with 100 images/month quota, processing history, and CSV re-downloads.
+**Goal:** Enable returning users to create accounts with 500 images/month quota, processing history, CSV re-downloads, and account dashboard — with subscription pricing UI scaffolded behind a feature flag.
 
-**Business Value:** Accounts drive retention and enable conversion to paid tiers. This is the foundation for monetization.
+**Business Value:** Accounts drive retention and enable conversion to paid tiers. This is the foundation for monetization. Supabase provides auth + database with minimal setup overhead.
+
+**Key Decisions (Sprint Change Proposal 2026-03-26):**
+
+- **Database/Auth:** Supabase (PostgreSQL + built-in auth + RLS)
+- **Billing scope:** UI-only — Stripe integration deferred to post-release
+- **Feature flag:** `FEATURE_PLANS_PAGE` gates Plans, Billing, and upgrade prompts
+- **Free tier:** 500 images/month
+- **Figma reference:** `references/Elegant Minimalist Web App (1)/src/`
+
+**Implementation Order:** 6.1 → 6.2 → 6.3 → 6.4 → 6.5 → 6.6 → 6.7 → 6.8 → 6.9 → 6.10 → 6.11
 
 ---
 
-### Story 6.1: User Registration & Signup Flow
+### Story 6.1: Supabase Setup, Auth & Database Schema
+
+**As a** developer,
+**I want** Supabase configured with database schema and auth,
+**So that** all Epic 6 stories have a data and authentication foundation.
+
+**Acceptance Criteria:**
+
+**Given** the app needs user accounts and data persistence
+**When** Supabase is integrated
+**Then:**
+
+- Supabase project created with PostgreSQL database
+- `@supabase/supabase-js` installed (frontend + backend)
+- Environment variables configured:
+  - `SUPABASE_URL`
+  - `SUPABASE_ANON_KEY`
+  - `SUPABASE_SERVICE_ROLE_KEY` (backend only, never exposed to client)
+- Database schema created via Supabase migrations:
+  - `profiles` table (id, full_name, email, default_initials, created_at, updated_at)
+  - `processing_batches` table (id, user_id, session_id, image_count, status, csv_filename, created_at, expires_at)
+  - `usage_tracking` table (id, user_id, month_year, images_used, updated_at)
+- Supabase Auth configured:
+  - Email/password provider enabled
+  - JWT expiration: 7 days
+  - Email confirmation: disabled for MVP (enable post-launch)
+- Row Level Security (RLS) policies:
+  - Users can only read/update their own profile
+  - Users can only access their own batches and usage data
+- Feature flag: `FEATURE_PLANS_PAGE` added to app config (default: false)
+- Supabase client singletons created:
+  - `client/src/lib/supabase.ts` (frontend client with ANON_KEY)
+  - `src/lib/supabase.ts` (backend client with SERVICE_ROLE_KEY)
+
+**Prerequisites:** None (first Epic 6 story)
+
+**Technical Notes:**
+
+- `npm install @supabase/supabase-js`
+- Add `SUPABASE_URL`, `SUPABASE_ANON_KEY` to `.env.example`
+- Add `SUPABASE_SERVICE_ROLE_KEY` to `.env.example` (server-only)
+- Add `FEATURE_PLANS_PAGE` to `app.config.ts` Zod schema (boolean, default false)
+- `profiles` table links to Supabase `auth.users` via id foreign key
+- Use Supabase dashboard or SQL migrations for schema
+- RLS is critical — enforce from day 1
+
+---
+
+### Story 6.2: React Router & App Shell
+
+**As a** developer,
+**I want** client-side routing with React Router,
+**So that** the app can navigate between pages without full page reloads.
+
+**Acceptance Criteria:**
+
+**Given** the app currently has no client-side routing
+**When** React Router is integrated
+**Then:**
+
+- `react-router-dom` installed
+- `createBrowserRouter` configured in `client/src/routes.ts` with:
+  - `/` → Home (existing upload page — app.tsx content)
+  - `/login` → Login page (placeholder, built in 6.4)
+  - `/signup` → Signup page (placeholder, built in 6.3)
+  - `/plans` → Plans page (placeholder, built in 6.10)
+  - `/account` → Account layout with nested routes (placeholder, built in 6.6)
+    - `/account` → Profile (index route)
+    - `/account/history` → History
+    - `/account/billing` → Billing
+- Root layout component created (`Root.tsx`):
+  - Fixed header with navigation (built out in 6.5)
+  - `<Outlet />` for page content
+  - Fixed footer (existing AppFooter)
+- Existing App component refactored:
+  - Current upload/processing/results flow moves into Home page component
+  - App.tsx becomes thin RouterProvider wrapper
+  - All existing functionality preserved — upload flow works identically at `/`
+- Placeholder pages return simple "Coming soon" text
+- Vite dev server configured for SPA fallback
+- Express SPA fallback updated: all non-`/api` routes serve `index.html`
+
+**Prerequisites:** Story 6.1 (Supabase setup — needed for auth context provider)
+
+**Figma Reference:** `references/Elegant Minimalist Web App (1)/src/routes.ts`, `Root.tsx`
+
+**Technical Notes:**
+
+- `npm install react-router-dom`
+- Pattern: `createBrowserRouter` + `RouterProvider` (modern React Router v6 API)
+- Wrap RouterProvider in Supabase auth context provider (from 6.1)
+- Keep existing DropZone, UploadView, ProcessingView, ResultsView untouched
+- Move them into a `Home.tsx` page component
+- Vite config: no change needed (proxy already handles `/api`, SPA fallback is default Vite behavior)
+- Express: existing `GET *` fallback already serves `index.html` for non-api routes
+
+---
+
+### Story 6.3: User Registration & Signup Page
 
 **As a** new user,
-**I want** to create a free account with email and password,
-**So that** I can process 100 images/month and save my history.
+**I want** to create an account with my name, email, and password,
+**So that** I can process 500 images/month and save my history.
 
 **Acceptance Criteria:**
 
 **Given** I want to create an account
-**When** I access the signup page (`/signup`)
+**When** I navigate to `/signup`
 **Then** I should see a form with:
 
+- Full Name input (required)
 - Email input (validated)
-- Password input (minimum 8 characters, show/hide toggle)
-- Confirm password
-- "Create Free Account" button
-- Link to login page
+- Password input (minimum 8 characters)
+- "Create Account" lava-button (animated gradient CTA)
+- Link to login: "Already have an account? Sign in" → `/login`
 
-**And** validation should check:
+**And** validation should:
 
-- Email format is valid
-- Email not already registered
-- Password meets requirements (8+ chars, 1 uppercase, 1 number)
-- Passwords match
+- Show inline errors below each field (not `alert()` dialogs)
+- Check email format client-side before submission
+- Check password minimum length (8 chars)
+- Show server-side errors from Supabase (e.g., "Email already registered")
 
 **And** on successful signup:
 
-- User record created in database (password hashed with bcrypt)
-- Email verification sent (optional for MVP)
-- User logged in automatically (JWT token issued)
-- Redirect to dashboard or upload page
+- Supabase Auth creates user record (password hashed automatically)
+- `profiles` table row created via database trigger or client call:
+  - `full_name` from form
+  - `default_initials` auto-generated from full name (e.g., "Alex Smith" → "AS")
+- User session established automatically (Supabase handles JWT)
+- Redirect to `/` (home/upload page)
 
-**And** the form should show clear error messages inline
+**And** the page should:
 
-**Prerequisites:** Story 1.5 (database schema)
+- Match Figma design: centered card layout, grain texture background
+- Use existing shadcn/ui Input and Label components
+- Use lava-button CSS class for CTA
+
+**Prerequisites:** Story 6.1 (Supabase), Story 6.2 (React Router — `/signup` route)
+
+**Figma Reference:** `references/Elegant Minimalist Web App (1)/src/SignUp.tsx`
 
 **Technical Notes:**
 
-- Create `POST /api/auth/signup` endpoint
-- Use bcrypt for password hashing (12 rounds)
-- Generate JWT token with user ID and tier
-- Create `SignupForm.tsx` React component
-- Use React Hook Form for validation
-- Implement email uniqueness check
-- Store JWT in httpOnly cookie or localStorage
+- Use `supabase.auth.signUp({ email, password, options: { data: { full_name } } })`
+- Supabase stores `full_name` in `auth.users.raw_user_meta_data`
+- Create a database trigger: on `auth.users` INSERT → insert into `public.profiles`
+- No email confirmation for MVP (configured in 6.1)
+- No confirm password field (Figma omits it — simpler UX)
+- No React Hook Form needed — simple controlled inputs sufficient
 
 ---
 
-### Story 6.2: User Login & Authentication
+### Story 6.4: User Login & Authentication Page
 
 **As a** returning user,
-**I want** to log in with my credentials,
+**I want** to log in with my email and password,
 **So that** I can access my account and processing history.
 
 **Acceptance Criteria:**
 
 **Given** I have an existing account
-**When** I access the login page (`/login`)
+**When** I navigate to `/login`
 **Then** I should see a form with:
 
 - Email input
-- Password input (show/hide toggle)
-- "Log In" button
-- "Forgot password?" link (placeholder for future)
-- Link to signup page
+- Password input
+- "Sign In" lava-button (animated gradient CTA)
+- "Forgot?" link next to password label (placeholder — no functionality in MVP)
+- Link to signup: "Don't have an account? Sign up" → `/signup`
 
 **And** on successful login:
 
-- Credentials validated against database
-- JWT token issued (contains user ID, email, tier)
-- Token stored securely (httpOnly cookie preferred)
-- Redirect to dashboard or last visited page
+- Supabase Auth validates credentials and establishes session
+- Redirect to `/` (home/upload page) or last visited page
+- Header navigation updates to show authenticated state (built in 6.5)
 
 **And** on failed login:
 
-- Show error: "Invalid email or password" (generic for security)
+- Show inline error: "Invalid email or password" (generic for security)
 - No indication whether email exists (prevent enumeration)
-- Rate limit login attempts (max 5 per 15 minutes per IP)
+- Supabase handles rate limiting on auth attempts automatically
 
-**Prerequisites:** Story 6.1 (user registration)
+**And** the page should:
+
+- Match Figma design: centered card layout, grain texture background
+- Use existing shadcn/ui Input and Label components
+- Use lava-button CSS class for CTA
+- "Forgot?" link styled as subtle text link (non-functional placeholder)
+
+**Prerequisites:** Story 6.3 (signup — so test accounts exist)
+
+**Figma Reference:** `references/Elegant Minimalist Web App (1)/src/Login.tsx`
 
 **Technical Notes:**
 
-- Create `POST /api/auth/login` endpoint
-- Compare password with bcrypt.compare()
-- Generate JWT with 7-day expiration
-- Create `LoginForm.tsx` React component
-- Implement session management (store user in React context)
-- Add "Remember me" option (extends token expiration)
-- Handle expired tokens gracefully (redirect to login)
+- Use `supabase.auth.signInWithPassword({ email, password })`
+- Supabase handles session persistence (stores in localStorage by default)
+- Auth state changes detected via `supabase.auth.onAuthStateChange()`
+- "Forgot?" link: renders as `<a>` pointing to `/forgot-password`, route shows "Coming soon" (or omit route, just show link)
+- No "Remember me" toggle — Supabase sessions persist by default (7-day expiry from 6.1)
 
 ---
 
-### Story 6.3: JWT-Based Authentication Middleware
+### Story 6.5: Header Navigation Update
 
-**As a** system,
-**I want** to protect authenticated routes with JWT validation,
-**So that** only logged-in users can access their data.
+**As a** user,
+**I want** the header to show relevant navigation links based on my auth state,
+**So that** I can easily access pricing, login, signup, or my account.
 
 **Acceptance Criteria:**
 
-**Given** protected API endpoints exist
-**When** a request is made to a protected route
-**Then** the authentication middleware should:
+**Given** the existing AppHeader component
+**When** auth-aware navigation is added
+**Then** the header should display:
 
-- Extract JWT from Authorization header or cookie
-- Verify token signature (using JWT secret)
-- Check token expiration
-- Attach user data to request object: `req.user = { id, email, tier }`
-- Return 401 if token invalid/expired/missing
+- Logo/brand (existing — left side)
+- Navigation links (right side), varying by auth state:
+  - **Logged OUT:** "Pricing" → `/plans` (only when `FEATURE_PLANS_PAGE=true`), "Login" → `/login`, "Sign Up" → `/signup` (lava-button style)
+  - **Logged IN:** "Pricing" → `/plans` (only when `FEATURE_PLANS_PAGE=true`), "Account" → `/account`
 
-**And** protected routes should include:
+**And** auth state should be:
 
-- `GET /api/batches` (user's processing history)
-- `GET /api/usage` (monthly quota tracking)
-- `POST /api/process-batch` (when authenticated)
+- Detected via Supabase auth listener (`supabase.auth.onAuthStateChange`)
+- Stored in React context accessible to all components
+- Auth context provides: `{ user, session, isLoading, signOut }`
 
-**And** anonymous routes should remain accessible:
+**And** a shared AuthProvider component should be created:
 
-- `POST /api/upload-images` (anonymous processing)
-- `POST /api/process-batch` (anonymous with session)
+- Wraps the app (inside RouterProvider)
+- Provides auth state via `useAuth()` hook
+- Handles session refresh automatically
+- Shows nothing (or skeleton) while auth state is loading
 
-**Prerequisites:** Story 6.2 (login system)
+**And** signOut should:
 
-**Technical Notes:**
+- Call `supabase.auth.signOut()`
+- Redirect to `/` (home page)
+- Clear auth context state
 
-- Create `src/api/middleware/auth.middleware.ts`:
-  ```typescript
-  export function requireAuth(req, res, next) {
-    const token = req.cookies.jwt || req.headers.authorization?.split(' ')[1];
-    if (!token) return res.status(401).json({ error: 'Unauthorized' });
-    // Verify token...
-  }
-  ```
-- Use `jsonwebtoken` library
-- Implement optional auth middleware (allows both authenticated and anonymous)
-- Add user type definitions: `req.user: { id, email, tier }`
+**Prerequisites:** Story 6.4 (login — so auth flow works end-to-end)
 
----
-
-### Story 6.4: Monthly Usage Tracking & Quota Enforcement
-
-**As a** free tier user,
-**I want** my monthly usage tracked automatically,
-**So that** I know how many images I have remaining.
-
-**Acceptance Criteria:**
-
-**Given** I am a logged-in free tier user
-**When** I process images
-**Then** the system should:
-
-- Increment `usage_tracking` table for current month
-- Check remaining quota before processing (100 - used)
-- Return error if quota exceeded: "You've used all 100 free images this month. Upgrade or wait until next month."
-- Reset quota automatically on 1st of each month
-
-**And** I should be able to check my usage:
-
-- `GET /api/usage` returns:
-  ```json
-  {
-    "tier": "free",
-    "monthlyLimit": 100,
-    "used": 37,
-    "remaining": 63,
-    "resetsAt": "2025-12-01T00:00:00Z"
-  }
-  ```
-
-**And** usage should be displayed in UI:
-
-- Header: "37 / 100 images used this month"
-- Progress bar showing quota
-
-**Prerequisites:** Story 1.5 (database schema), Story 6.3 (auth middleware)
+**Figma Reference:** `references/Elegant Minimalist Web App (1)/src/Root.tsx`
 
 **Technical Notes:**
 
-- Create `src/services/usage-tracking.service.ts`:
-  ```typescript
-  async function trackUsage(userId: string, imageCount: number);
-  async function getUsage(userId: string): Promise<UsageStats>;
-  async function hasQuota(userId: string, requestedCount: number): boolean;
-  ```
-- Implement monthly reset logic (cron job or check on-demand)
-- Add database index on `(user_id, month_year)`
-- Create `GET /api/usage` endpoint
-- Display usage in React component (header or dashboard)
+- Create `client/src/contexts/AuthContext.tsx` with AuthProvider + `useAuth` hook
+- `supabase.auth.onAuthStateChange()` in `useEffect` for real-time auth state
+- Feature flag check: read `FEATURE_PLANS_PAGE` from env
+  - Simple approach: `import.meta.env.VITE_FEATURE_PLANS_PAGE`
+  - Add `VITE_FEATURE_PLANS_PAGE` to `.env.example`
+- Sign Out link appears in AccountLayout sidebar (Story 6.6)
+- This story establishes the AuthProvider used by ALL subsequent stories
 
 ---
 
-### Story 6.5: Processing History & CSV Re-Download
+### Story 6.6: Account Layout & Sidebar Routing
 
 **As a** logged-in user,
-**I want** to view my past processing batches and re-download CSVs,
-**So that** I don't have to reprocess images if I lose the file.
+**I want** a dashboard layout with sidebar navigation,
+**So that** I can switch between my profile, history, and billing settings.
 
 **Acceptance Criteria:**
 
-**Given** I am a logged-in user
-**When** I access my history page (`/history`)
-**Then** I should see a list of past batches:
+**Given** I am logged in and navigate to `/account`
+**When** the account layout renders
+**Then** I should see:
 
-- Date/time processed
-- Number of images
-- CSV filename
-- Status (completed, failed)
-- Download button for each batch
+- Sidebar navigation (left side) with links:
+  - "Profile" → `/account` (index route, active by default)
+  - "History" → `/account/history`
+  - "Billing" → `/account/billing` (only visible when `FEATURE_PLANS_PAGE=true`)
+  - "Log out" → calls signOut, redirects to `/`
+- Content area (right side) with `<Outlet />` for nested route content
+- Active link highlighted in sidebar
+
+**And** the layout should:
+
+- Match Figma AccountLayout.tsx: sidebar + content area
+- Use existing shadcn/ui components for nav links
+- Sidebar collapses on mobile (stack nav above content)
+- "Log out" styled differently from nav links (muted, bottom of sidebar)
+
+**And** route protection should be implemented:
+
+- `/account/*` routes require authentication
+- If not logged in, redirect to `/login`
+- Create a `ProtectedRoute` wrapper component:
+  - Uses `useAuth()` hook from Story 6.5
+  - Shows loading state while checking auth
+  - Redirects to `/login` if no session
+
+**Prerequisites:** Story 6.5 (AuthProvider + `useAuth` hook)
+
+**Figma Reference:** `references/Elegant Minimalist Web App (1)/src/AccountLayout.tsx`
+
+**Technical Notes:**
+
+- AccountLayout.tsx uses React Router `<Outlet />` for nested content
+- `ProtectedRoute` component pattern: check `useAuth()`, redirect if no user
+- Sidebar links use `NavLink` from `react-router-dom` (automatic active class)
+- Feature flag check for Billing link: same `VITE_FEATURE_PLANS_PAGE` env var
+- Placeholder content for sub-routes: "Coming soon" text
+- Log out uses `signOut()` from AuthContext (Story 6.5)
+
+---
+
+### Story 6.7: Account Profile & Settings
+
+**As a** logged-in user,
+**I want** to view and edit my profile information,
+**So that** I can update my name, email, and default initials for metadata.
+
+**Acceptance Criteria:**
+
+**Given** I am logged in and navigate to `/account`
+**When** the profile page renders (index route of account layout)
+**Then** I should see a form with:
+
+- Full Name input (pre-filled from profile)
+- Email input (pre-filled, read-only for MVP)
+- Default Initials input (pre-filled, editable):
+  - Auto-generated from full name on signup (e.g., "Alex Smith" → "AS")
+  - User can override with custom initials
+  - Used as default value in upload flow's initials field
+- "Save Changes" button
+
+**And** on save:
+
+- Update `profiles` table via Supabase client
+- Show success toast: "Profile updated"
+- Show error toast if update fails
+
+**And** Default Initials integration:
+
+- When user is logged in, the upload page pre-fills initials from `profile.default_initials`
+- User can still override per-session on the upload page
+
+**And** the page should:
+
+- Match Figma AccountProfile.tsx layout
+- Render inside AccountLayout's `<Outlet />` (from 6.6)
+- Use existing shadcn/ui Input, Label components
+- Use Sonner toast for feedback (wired up in Story 5.7)
+
+**Prerequisites:** Story 6.6 (account layout with nested routing)
+
+**Figma Reference:** `references/Elegant Minimalist Web App (1)/src/AccountProfile.tsx`
+
+**Technical Notes:**
+
+- Fetch profile: `supabase.from('profiles').select().eq('id', user.id).single()`
+- Update profile: `supabase.from('profiles').update({ full_name, default_initials })`
+- RLS policies (from 6.1) ensure users can only edit their own profile
+- Default Initials field: `maxLength={5}`, same constraints as upload initials input
+- Password change deferred to post-MVP (Supabase has `supabase.auth.resetPasswordForEmail()`)
+- Account deletion deferred to post-MVP
+
+---
+
+### Story 6.8: Processing History & CSV Re-Download
+
+**As a** logged-in user,
+**I want** to view my past processing sessions and re-download CSVs,
+**So that** I don't lose my work if I close the browser.
+
+**Acceptance Criteria:**
+
+**Given** I am logged in and navigate to `/account/history`
+**When** the history page renders
+**Then** I should see a list of past sessions, each showing:
+
+- Session name (auto-generated: "Session — {date}")
+- Date and time processed
+- Image count
+- Click-anywhere-to-download behavior (entire card is clickable)
+- Download icon with hover animation
 
 **And** the list should:
 
-- Show most recent first (paginated, 10 per page)
-- Include batches from last 30 days (free tier)
-- Allow filtering by date or status
+- Show most recent first
+- Display batches from last 30 days (free tier)
+- Show empty state if no history: "No sessions yet. Process some images!"
 
-**And** clicking "Download" should:
+**And** clicking a session card should:
 
-- Re-download the CSV file
-- Work even if processed weeks ago
-- Track download event (analytics)
+- Trigger CSV file download immediately
+- Show success toast: "CSV downloaded"
+- Show error toast if CSV expired: "This CSV is no longer available"
 
-**And** expired batches (>30 days) should:
+**And** batch data should:
 
-- Be archived (CSV file deleted)
-- Show "Expired - CSV no longer available"
+- Be saved to `processing_batches` table on batch completion (update backend to INSERT when user is authenticated)
+- Include `user_id` from Supabase auth session
+- Link CSV filename for re-download
 
-**Prerequisites:** Story 4.3 (batch persistence), Story 6.4 (usage tracking)
+**And** the page should:
+
+- Match Figma History.tsx: session cards with download icon
+- Render inside AccountLayout's `<Outlet />` (from 6.6)
+- Use lucide-react Download and FileText icons
+- Card hover state: subtle background change + download icon animation
+
+**Prerequisites:** Story 6.6 (account layout), Story 4.3 (batch history persistence)
+
+**Figma Reference:** `references/Elegant Minimalist Web App (1)/src/History.tsx`
 
 **Technical Notes:**
 
-- Create `GET /api/batches` endpoint (returns user's batches)
-- Query `processing_batches` table filtered by `user_id`
-- Order by `created_at DESC`
-- Implement pagination (limit/offset or cursor-based)
-- Create `HistoryView.tsx` React component
-- Display in table or card grid format
-- Add filters (date range, status)
+- Fetch history: `supabase.from('processing_batches').select().eq('user_id', user.id).order('created_at', { ascending: false })`
+- CSV download: reuse existing `/api/download-csv/:batchId` endpoint
+- Backend update needed: when authenticated user processes a batch, store `user_id` in `processing_batches` table
+- RLS policy ensures users only see their own batches
+- Download icon animation: CSS only (transform + transition on hover)
+- Figma shows click-anywhere pattern — wrap entire card in clickable element
 
 ---
 
-### Story 6.6: Account Settings & Profile Management
+### Story 6.9: Monthly Usage Tracking & Quota Enforcement
+
+**As a** free-tier user,
+**I want** to see how many images I've used this month,
+**So that** I know my remaining quota before processing a batch.
+
+**Acceptance Criteria:**
+
+**Given** I am a logged-in free-tier user
+**When** I process images or check my usage
+**Then** the system should:
+
+- Track images processed per user per month in `usage_tracking` table
+- Increment count after each successful batch completion
+- Check remaining quota before starting a new batch:
+  - Free tier: 500 images/month
+  - If quota exceeded: show toast "You've used all 500 free images this month. Try again next month." and block processing
+- Reset quota automatically on 1st of each month (check `month_year` field)
+
+**And** usage should be visible in the UI:
+
+- Upload page (when logged in): "37 of 500 images used this month"
+- Near the "Generate" button: remaining count updates after each batch
+
+**And** the usage API should:
+
+- `GET /api/usage` endpoint (protected, requires Supabase auth)
+- Returns: `{ tier, monthlyLimit, used, remaining, resetsAt }`
+- Backend verifies Supabase JWT via `supabase.auth.getUser()`
+
+**And** for anonymous users:
+
+- Existing session-based tracking (10 per session) unchanged
+- No monthly tracking — that's an account benefit
+- Subtle prompt after anonymous processing: "Want 500 images/month? Create a free account"
+
+**Prerequisites:** Story 6.7 (profile — user account fully functional)
+
+**Technical Notes:**
+
+- Usage query: `supabase.from('usage_tracking').select().eq('user_id', user.id).eq('month_year', currentMonth)`
+- Upsert pattern: increment `images_used`, create row if first use this month
+- `month_year` format: "2026-03" (string, simple comparison)
+- Backend middleware: extract user from Supabase JWT, check quota before processing
+- No cron job needed for reset — checking `month_year` handles it naturally
+- Quota check happens server-side (can't trust client)
+
+---
+
+### Story 6.10: Plans & Pricing Page (Feature-Flagged)
+
+**As a** visitor or logged-in user,
+**I want** to see available subscription plans and pricing,
+**So that** I understand what each tier offers and can choose to upgrade.
+
+**Acceptance Criteria:**
+
+**Given** `FEATURE_PLANS_PAGE=true`
+**When** I navigate to `/plans`
+**Then** I should see a 3-tier pricing display:
+
+- **First Tier — $5/month:** 1,000 images/month, Standard AI metadata, CSV exports, Email support
+- **Second Tier (highlighted) — $23/month:** 5,000 images/month, Advanced AI metadata, CSV + JSON exports, Priority support. Visually prominent: `scale-105`, `shadow-2xl`, "Most Popular" badge. CTA uses lava-button style.
+- **Third Tier — $40/month:** 10,000 images/month, Custom AI prompts, API access, 24/7 phone support
+
+**And** each tier card should have:
+
+- Price display with "/mo" suffix
+- Feature list with Check icons (lucide-react)
+- CTA button: "Get Started" (non-functional for MVP)
+- CTA click shows toast: "Coming soon! We'll notify you when plans are available."
+
+**And** the page should also show:
+
+- Free tier mention: "Currently free — 500 images/month for all accounts"
+
+**And** upgrade prompts should appear (absorbed from old Story 6.7):
+
+- After anonymous processing: "Want more? Create a free account (500 images/month)"
+- When free quota exhausted: link to `/plans` "See our plans for more images"
+- Prompts only visible when `FEATURE_PLANS_PAGE=true`
+- When flag is false, quota-exhausted message says: "You've used all 500 free images this month. Try again next month."
+
+**And** when `FEATURE_PLANS_PAGE=false`:
+
+- `/plans` route shows 404 or redirects to `/`
+- "Pricing" link hidden from header (Story 6.5)
+- Upgrade prompts default to simple non-monetization messages
+- No references to paid tiers visible anywhere in the app
+
+**Prerequisites:** Story 6.5 (header nav with feature flag), Story 6.9 (usage tracking)
+
+**Figma Reference:** `references/Elegant Minimalist Web App (1)/src/Plans.tsx`
+
+**Technical Notes:**
+
+- Tier data: static object in component (no backend needed)
+- CTA buttons: `onClick` shows toast, no navigation
+- Feature flag: `import.meta.env.VITE_FEATURE_PLANS_PAGE`
+- Middle tier emphasis: Tailwind `scale-105` transform + `shadow-2xl` + ring or border accent
+- Upgrade prompt component: reusable `<UpgradePrompt />` that checks feature flag internally — returns null when flag is false
+- No Stripe integration — all CTAs are placeholders
+
+---
+
+### Story 6.11: Billing Management Tab (Feature-Flagged)
 
 **As a** logged-in user,
-**I want** to manage my account settings,
-**So that** I can update my information or delete my account.
+**I want** to see my current plan and billing information,
+**So that** I understand my subscription status and can manage payments (future).
 
 **Acceptance Criteria:**
 
-**Given** I am logged in
-**When** I access settings page (`/settings`)
-**Then** I should be able to:
+**Given** `FEATURE_PLANS_PAGE=true` and I am logged in
+**When** I navigate to `/account/billing`
+**Then** I should see:
 
-- View my email and account tier
-- Change password (requires current password)
-- Update email (with verification)
-- View usage statistics (images processed, quota)
-- Delete account (with confirmation dialog)
+- **Current Plan section:** Plan name ("Free Plan" for all users in MVP), Status badge: "Active" (green), Auto-renewal date: "N/A" for free tier, "Change Plan" link → `/plans`
+- **Payment Method section:** Placeholder: "No payment method on file", "Add Payment Method" button (non-functional), Button click shows toast: "Payment methods coming soon!"
+- **Billing Email section:** Displays user's email from profile, "Update" link (non-functional, shows toast: "Coming soon!")
+- **Recent Invoices section:** Empty state: "No invoices yet", Table structure ready (Date, Description, Amount, Status columns)
 
-**And** changing password should:
+**And** when `FEATURE_PLANS_PAGE=false`:
 
-- Require current password (security)
-- Validate new password (8+ chars, strength)
-- Confirm new password matches
-- Hash and update in database
-- Log out all sessions (invalidate tokens)
+- "Billing" link hidden from account sidebar (Story 6.6)
+- `/account/billing` route redirects to `/account`
+- No billing references visible in the app
 
-**And** deleting account should:
+**And** the page should:
 
-- Show warning: "This will permanently delete your data"
-- Require password confirmation
-- Delete user record, batches, usage data (GDPR compliance)
-- Delete all CSV files associated with user
-- Log out immediately
+- Match Figma Billing.tsx layout
+- Render inside AccountLayout's `<Outlet />` (from 6.6)
+- Use shadcn/ui components (Badge for status, Table for invoices)
+- All interactive elements show "coming soon" toasts
 
-**Prerequisites:** Story 6.2 (login), Story 6.4 (usage tracking)
+**Prerequisites:** Story 6.6 (account layout), Story 6.9 (usage/tier awareness)
+
+**Figma Reference:** `references/Elegant Minimalist Web App (1)/src/Billing.tsx`
 
 **Technical Notes:**
 
-- Create `PATCH /api/user/password` endpoint
-- Create `DELETE /api/user` endpoint
-- Implement cascade delete in database (foreign keys)
-- Create `SettingsView.tsx` React component
-- Use React Hook Form for password change
-- Add confirmation modal for account deletion
-- Implement soft delete (optional - mark as deleted, clean up later)
-
----
-
-### Story 6.7: Upgrade Prompt & Upsell Flow
-
-**As a** product owner,
-**I want** clear upgrade prompts shown at appropriate moments,
-**So that** users understand the benefits of paid tiers (future monetization).
-
-**Acceptance Criteria:**
-
-**Given** various user scenarios
-**When** upgrade opportunities arise
-**Then** prompts should appear:
-
-- **After anonymous processing:** "Want more? Create free account (100 images/month)"
-- **When free quota exhausted:** "Upgrade to Pro for unlimited processing"
-- **On history page:** "Pro users get unlimited history + priority processing"
-- **Before large batch:** "Free tier: 100/month. Need more? Upgrade to Pro"
-
-**And** prompts should:
-
-- Be non-intrusive (not blocking modals)
-- Show clear value proposition (what user gets)
-- Include pricing (when paid tiers exist)
-- Link to pricing page or upgrade flow
-- Track clicks (conversion funnel analytics)
-
-**And** the design should:
-
-- Use subtle call-to-action styling
-- Not feel pushy or aggressive
-- Emphasize benefits (not limitations)
-
-**Prerequisites:** Story 6.5 (history), Story 6.4 (usage tracking)
-
-**Technical Notes:**
-
-- Create reusable `UpgradePrompt.tsx` component
-- Implement trigger logic (when to show prompts)
-- Add analytics tracking for prompt impressions and clicks
-- Design pricing tiers (Pro, Agency - not implemented yet)
-- Create placeholder `/pricing` page
-- Implement Stripe integration (future Epic 7)
+- No backend endpoints needed — all data derived from:
+  - Current plan: hardcoded "Free Plan" for MVP (all users are free tier)
+  - Email: from auth context / profiles table
+  - Invoices: empty array
+- Feature flag: same `VITE_FEATURE_PLANS_PAGE` as Plans page
+- Billing page structure is scaffolding for Stripe integration — when Stripe is added later, replace static values with real data
+- This is the lightest story in Epic 6 — mostly static UI with placeholder interactions
 
 ---
 
 ## Epic Breakdown Summary
 
-**Total Stories:** ~40 stories across 6 epics
+**Total Stories:** ~43 stories across 6 epics
 
 ### Story Count by Epic:
 
-1. **Epic 1 (Foundation Refactoring):** 11 stories ⚡ **PRIORITY**
+1. **Epic 1 (Foundation Refactoring):** 11 stories
 2. **Epic 2 (Processing):** 6 stories
 3. **Epic 3 (AI Engine):** 5 stories
 4. **Epic 4 (CSV Export):** 3 stories
-5. **Epic 5 (UI/UX):** 7 stories
-6. **Epic 6 (Accounts):** 7 stories
+5. **Epic 5 (UI/UX):** 7 stories (5.5 deferred)
+6. **Epic 6 (Accounts):** 11 stories (restructured 2026-03-26)
 
 ### Estimated Timeline:
 

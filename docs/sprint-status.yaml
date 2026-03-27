@@ -2,7 +2,7 @@
 # This file tracks development progress through Epic 1-6
 
 # generated: 2025-11-11
-# last_updated: 2026-03-19 (Story 5.1 recreated with Figma fixes)
+# last_updated: 2026-03-26 (Sprint planning refresh — all statuses verified against epics.md and story files)
 # project: adobe-stock-uploader
 # project_key: adobe-stock-uploader
 # tracking_system: file-system
@@ -103,20 +103,31 @@ development_status:
   5-2-upload-experience-and-file-validation: done  # Code review approved 2026-03-21. All ACs implemented, 3M issues fixed, build + 965 tests pass
   5-3-processing-view-and-real-time-status: done  # Story context created 2026-03-21
   5-4-results-view-and-metadata-preview: done  # Code review approved 2026-03-23. 8 issues fixed (1H, 3M, 4L)
-  5-5-dark-mode-default-and-visual-polish: backlog
+  5-5-dark-mode-default-and-visual-polish: deferred  # Deferred per Sprint Change Proposal 2026-03-26 — not a priority for beta
   5-6-responsive-design-and-mobile-optimization: backlog
-  5-7-error-handling-and-toast-notifications: ready-for-dev
+  5-7-error-handling-and-toast-notifications: review  # Status corrected 2026-03-26 — code review pending, was incorrectly marked ready-for-dev
   epic-5-retrospective: optional
 
   # Epic 6: User Account System
-  epic-6: backlog
-  6-1-user-registration-and-signup-flow: backlog
-  6-2-user-login-and-authentication: backlog
-  6-3-jwt-based-authentication-middleware: backlog
-  6-4-monthly-usage-tracking-and-quota-enforcement: backlog
-  6-5-processing-history-and-csv-re-download: backlog
-  6-6-account-settings-and-profile-management: backlog
-  6-7-upgrade-prompt-and-upsell-flow: backlog
+  # Restructured per Sprint Change Proposal 2026-03-26
+  # Changes: Supabase replaces manual auth, React Router added, Figma UI alignment
+  # New stories: 6.1 (Supabase), 6.2 (Router), 6.5 (Header Nav), 6.6 (Account Layout),
+  #   6.10 (Plans page), 6.11 (Billing tab)
+  # Removed: old 6.3 (JWT Middleware — Supabase handles), old 6.7 (absorbed into 6.10)
+  # Feature flag: FEATURE_PLANS_PAGE gates Plans, Billing, upgrade prompts
+  # Free tier: updated to 500 images/month
+  epic-6: in-progress
+  6-1-supabase-setup-auth-and-database-schema: done
+  6-2-react-router-and-app-shell: backlog
+  6-3-user-registration-and-signup-page: backlog
+  6-4-user-login-and-authentication-page: backlog
+  6-5-header-navigation-update: backlog
+  6-6-account-layout-and-sidebar-routing: backlog
+  6-7-account-profile-and-settings: backlog
+  6-8-processing-history-and-csv-re-download: backlog
+  6-9-monthly-usage-tracking-and-quota-enforcement: backlog
+  6-10-plans-and-pricing-page: backlog  # Feature-flagged (FEATURE_PLANS_PAGE)
+  6-11-billing-management-tab: backlog  # Feature-flagged (FEATURE_PLANS_PAGE)
   epic-6-retrospective: optional
 
 # ==============================================================================

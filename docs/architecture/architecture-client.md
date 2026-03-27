@@ -4,19 +4,21 @@
 
 The Adobe Stock Uploader frontend is a single-page React application built with TypeScript, Vite, and shadcn/ui. It provides an elegant, minimalist interface for bulk image upload and AI-powered metadata generation with drag-and-drop support and real-time progress tracking.
 
-**Tech Stack**: React 19, TypeScript, Vite, Tailwind CSS, shadcn/ui  
-**Architecture**: Component-based SPA  
-**Build Tool**: Vite 7.2.2  
+**Tech Stack**: React 19, TypeScript, Vite, Tailwind CSS, shadcn/ui, React Router, Supabase
+**Architecture**: Component-based SPA with client-side routing
+**Build Tool**: Vite 7.2.2
 **UI Framework**: Tailwind CSS + Custom glassmorphism design
 
-**⚠️ Frontend Stability Note:**
-The current frontend architecture is **well-designed and requires minimal changes** for PRD alignment. Primary changes are:
+**⚠️ Frontend Architecture Note (Updated 2026-03-26):**
+Epic 6 introduces significant frontend additions per Sprint Change Proposal 2026-03-26:
 
-- **Epic 5, Story 5.6:** Add Server-Sent Events (SSE) for real-time progress updates
-- **Epic 6:** Add signup/login UI components for user accounts
-- **API endpoint updates:** Change from `/api/process-batch` to `/api/upload-images`
+- **React Router:** Client-side routing with `createBrowserRouter` for multi-page navigation
+- **Supabase Auth:** Authentication via `@supabase/supabase-js` with AuthProvider context
+- **Account Dashboard:** Nested routing with `AccountLayout` sidebar + `<Outlet />`
+- **Feature Flags:** `FEATURE_PLANS_PAGE` gates Plans and Billing UI
+- **Figma Reference:** `references/Elegant Minimalist Web App (1)/src/` provides exact UI specs
 
-All existing UI components, styling, and state management patterns remain unchanged. The backend refactoring (Epic 1-3) is transparent to the frontend.
+All existing UI components, styling, and state management patterns remain unchanged. The upload flow at `/` works identically after Router integration.
 
 ---
 
@@ -42,6 +44,13 @@ All existing UI components, styling, and state management patterns remain unchan
 | tailwind-merge           | 3.3.1   | Class merging utility |
 | clsx                     | 2.1.1   | Conditional classes   |
 
+### Routing & Auth (Epic 6)
+
+| Technology            | Version | Purpose             |
+| --------------------- | ------- | ------------------- |
+| react-router-dom      | 6.x     | Client-side routing |
+| @supabase/supabase-js | 2.x     | Auth, database, RLS |
+
 ### Functionality
 
 | Technology              | Version | Purpose            |
@@ -53,34 +62,44 @@ All existing UI components, styling, and state management patterns remain unchan
 
 ## Architecture Pattern
 
-### Component-Based Architecture
+### Component-Based Architecture with Client-Side Routing
 
 ```
-App (Root Component)
-├── DropZone (Drag & drop wrapper)
-│   ├── Header (Fixed top navigation)
-│   ├── Hero Section (Title + description)
-│   ├── Upload Zone | Image Grid (Conditional)
-│   │   ├── File Input (Hidden)
-│   │   ├── Select Button (Primary CTA)
-│   │   └── Drop Indicator (Visual feedback)
-│   ├── Image Preview Grid (4-column)
-│   │   └── Image Cards (with delete button)
-│   ├── Progress Bar (Conditional during processing)
-│   ├── Form Section
-│   │   ├── Label (Initials label)
-│   │   ├── Input (Initials field)
-│   │   └── Action Buttons
-│   │       ├── Generate Button
-│   │       └── Clear Button
-│   └── Footer (Fixed bottom)
+App (RouterProvider)
+├── AuthProvider (Supabase auth context)
+│   └── Root Layout (Header + <Outlet /> + Footer)
+│       │
+│       ├── / → Home (Upload flow)
+│       │   └── DropZone (Drag & drop wrapper)
+│       │       ├── UploadView (File picker, thumbnail grid, validation)
+│       │       ├── ProcessingView (Progress bar, per-image status)
+│       │       └── ResultsView (Metadata preview, CSV download)
+│       │
+│       ├── /login → Login Page (Supabase Auth)
+│       ├── /signup → Signup Page (Supabase Auth)
+│       ├── /plans → Plans & Pricing (feature-flagged)
+│       │
+│       └── /account → ProtectedRoute → AccountLayout
+│           ├── Sidebar Nav (Profile, History, Billing, Log out)
+│           └── <Outlet /> (nested content)
+│               ├── /account → AccountProfile (index)
+│               ├── /account/history → History
+│               └── /account/billing → Billing (feature-flagged)
 │
 └── UI Components (shadcn/ui - 47 components)
-    ├── Input
-    ├── Label
-    ├── Progress
-    └── [44 other available components]
+    ├── Input, Label, Progress, Table, Badge
+    └── [42 other available components]
 ```
+
+### Key Architectural Patterns (Epic 6)
+
+**React Router:** `createBrowserRouter` with nested routes and `<Outlet />` for layout composition. Root layout provides header/footer, AccountLayout provides sidebar nav.
+
+**Auth Context:** `AuthProvider` wraps the app, provides `useAuth()` hook with `{ user, session, isLoading, signOut }`. Listens to `supabase.auth.onAuthStateChange()` for real-time state.
+
+**Protected Routes:** `ProtectedRoute` component checks auth state, redirects to `/login` if not authenticated, shows loading state while checking.
+
+**Feature Flags:** `VITE_FEATURE_PLANS_PAGE` env var gates Plans page, Billing tab, "Pricing" header link, and upgrade prompts. Components check flag internally and return null when disabled.
 
 ---
 
@@ -293,15 +312,72 @@ try {
 
 ---
 
+## Supabase Integration (Epic 6)
+
+### Client Setup
+
+```typescript
+// client/src/lib/supabase.ts
+import { createClient } from '@supabase/supabase-js';
+
+export const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+);
+```
+
+### Auth Context
+
+```typescript
+// client/src/contexts/AuthContext.tsx
+interface AuthContextType {
+  user: User | null;
+  session: Session | null;
+  isLoading: boolean;
+  signOut: () => Promise<void>;
+}
+
+// AuthProvider wraps app, listens to supabase.auth.onAuthStateChange()
+// useAuth() hook provides auth state to any component
+```
+
+### Database Queries
+
+```typescript
+// Profile
+supabase.from('profiles').select().eq('id', user.id).single();
+supabase.from('profiles').update({ full_name, default_initials });
+
+// History
+supabase
+  .from('processing_batches')
+  .select()
+  .eq('user_id', user.id)
+  .order('created_at', { ascending: false });
+
+// Usage
+supabase.from('usage_tracking').select().eq('user_id', user.id).eq('month_year', currentMonth);
+```
+
+### Environment Variables (Frontend)
+
+```env
+VITE_SUPABASE_URL=https://xxx.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJhbGci...
+VITE_FEATURE_PLANS_PAGE=false
+```
+
+---
+
 ## State Management
 
-### Strategy: React Hooks (useState)
+### Strategy: React Hooks (useState) + Auth Context
 
 **Rationale**:
 
-- Simple application with localized state
+- Simple application with localized state for upload flow
+- Auth state managed via React Context (Supabase AuthProvider)
 - No need for global state management (Redux, Zustand)
-- Props drilling not an issue (single component)
 - React 19 automatic batching handles updates efficiently
 
 **State Categories**:
@@ -708,8 +784,10 @@ npm run build
 {
   "react": "^19.2.0",
   "react-dom": "^19.2.0",
+  "react-router-dom": "^6.x",
   "react-dnd": "^16.0.1",
   "react-dnd-html5-backend": "^16.0.1",
+  "@supabase/supabase-js": "^2.x",
   "@radix-ui/react-label": "^2.1.8",
   "@radix-ui/react-progress": "^1.1.8",
   "@radix-ui/react-slot": "^1.2.4",
@@ -732,10 +810,12 @@ npm run build
 
 ---
 
-**Architecture Type**: Component-Based SPA  
-**Lines of Code**: ~508 (app.tsx) + 47 UI components  
-**Build Tool**: Vite 7.2.2  
-**Styling**: Tailwind CSS + Custom Design System  
-**State Management**: React Hooks (useState)
+**Architecture Type**: Component-Based SPA with Client-Side Routing
+**Build Tool**: Vite 7.2.2
+**Routing**: React Router v6 (`createBrowserRouter`)
+**Auth**: Supabase Auth (email/password, JWT, session management)
+**Database**: Supabase (PostgreSQL + RLS)
+**Styling**: Tailwind CSS + Custom Design System
+**State Management**: React Hooks (useState) + Auth Context (Supabase)
 
-**Last Updated**: November 9, 2025
+**Last Updated**: March 26, 2026 (Epic 6 restructure — React Router, Supabase, Figma integration)

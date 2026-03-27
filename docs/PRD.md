@@ -14,7 +14,7 @@ The product targets individual stock photographers who manually process hundreds
 
 ### What Makes This Special
 
-**Speed as a Competitive Moat** - While competitors require signup walls and offer limited free tiers, Adobe Stock Uploader lets users try immediately without registration, processes 3-4x faster than alternatives through parallel processing, and offers 10x more generous free tier (100 images/month). The magic moment: "Drop your images, get perfect Adobe Stock metadata in under 3 minutes—no signup required."
+**Speed as a Competitive Moat** - While competitors require signup walls and offer limited free tiers, Adobe Stock Uploader lets users try immediately without registration, processes 3-4x faster than alternatives through parallel processing, and offers 10x more generous free tier (500 images/month). The magic moment: "Drop your images, get perfect Adobe Stock metadata in under 3 minutes—no signup required."
 
 **Simplicity in a Feature-Bloated Market** - Stock photographers are visual creatives who value speed and simplicity over feature complexity. Where competitors add endless features, we win by removing friction. The experience is "stupidly simple": Drop images → See progress → Download CSV. That's it.
 
@@ -33,7 +33,7 @@ The product targets individual stock photographers who manually process hundreds
 - **Image Processing:** Sharp (compression, optimization)
 - **AI:** OpenAI GPT-5-mini Vision API
 - **Deployment:** Railway/Render/Fly.io (free HTTPS)
-- **Database:** PostgreSQL (for user accounts, usage tracking)
+- **Database/Auth:** Supabase (PostgreSQL + built-in auth + Row Level Security)
 
 ### Project Track
 
@@ -86,11 +86,13 @@ The product targets individual stock photographers who manually process hundreds
 2. **Batch Upload** - Drag-and-drop interface for multiple images
 3. **AI Metadata Generation** - Title, keywords (up to 50), category selection
 4. **CSV Export** - Adobe Stock-compliant format, instant download
-5. **User Accounts** - Optional free account (100 images/month, history)
+5. **User Accounts** - Optional free account (500 images/month, history)
 6. **Self-Hosted Architecture** - Temp URLs for image processing (no Cloudinary)
 7. **Parallel Processing** - 5 concurrent processes for 3-4x speed boost
 8. **Simple Progress Bar** - Basic feedback during processing
 9. **Elegant UI** - Dark mode, clean typography, photographer aesthetic
+10. **Plans & Pricing Page** - 3 subscription tiers displayed (UI-only, Stripe deferred)
+11. **Account Dashboard** - Profile, history, billing tabs with sidebar navigation
 
 **Technical Optimizations (MVP):**
 
@@ -124,8 +126,8 @@ The product targets individual stock photographers who manually process hundreds
 
 **Pricing & Monetization:**
 
-- Stripe payment integration
-- Multiple subscription tiers
+- Plans & Pricing page with 3 tiers (MVP — UI-only, feature-flagged)
+- Stripe payment integration (post-release)
 - Pay-per-use option (potential)
 
 ### Vision (Future, 6+ Months)
@@ -183,16 +185,16 @@ The product targets individual stock photographers who manually process hundreds
 - **Input:** JSON metadata array
 - **Output:** CSV file download
 
-**POST /api/auth/signup** (Future)
+**POST /api/auth/signup** (Epic 6)
 
-- User registration with email/password
-- Email verification
-- Create user account with free tier
+- User registration via Supabase Auth (email/password + full name)
+- Automatic profile creation via database trigger
+- Free tier account (500 images/month)
 
-**POST /api/auth/login** (Future)
+**POST /api/auth/login** (Epic 6)
 
-- JWT-based authentication
-- Session management
+- Supabase Auth login (automatic JWT + session management)
+- Auth state managed via Supabase client SDK
 
 **GET /api/usage** (Future)
 
@@ -201,11 +203,11 @@ The product targets individual stock photographers who manually process hundreds
 
 ### Authentication Model
 
-**MVP: Cookie-Based Anonymous + Optional Accounts**
+**MVP: Cookie-Based Anonymous + Supabase Accounts**
 
 - **Anonymous Users:** Browser cookie tracks session, prevents spam
-- **Free Accounts:** Email/password authentication, JWT tokens
-- **Paid Accounts:** Same as free + Stripe customer ID
+- **Free Accounts:** Supabase Auth (email/password, automatic JWT, session management)
+- **Paid Accounts:** Same as free + Stripe customer ID (post-release)
 
 **Security:**
 
@@ -248,7 +250,7 @@ Stock photographers are visual creatives who value:
 Hero Section:
   - H1: "Generate Adobe Stock Metadata with AI"
   - Large drag-and-drop zone (prominent, inviting)
-  - Subtext: "No signup required • 100 free images/month"
+  - Subtext: "No signup required • 500 free images/month"
   - Visual: Animated example of drag-drop → CSV
 
 CTA:
@@ -277,7 +279,7 @@ Success State:
   [Download CSV] (large, prominent button)
 
   Subtle upsell below:
-  "Want to save history and process 100 free images/month?"
+  "Want to save history and process 500 free images/month?"
   [Create Free Account] (smaller, non-intrusive)
 ```
 
@@ -373,20 +375,33 @@ Drop 10 images → Immediate processing
 
 ---
 
-### FR-5: User Account System (Optional Free Tier)
+### FR-5: User Account System (Free Tier)
 
-**Priority:** High (MVP)  
-**User Story:** As a returning user, I want to create a free account, so I can process 100 images/month and access my history.
+**Priority:** High (MVP)
+**User Story:** As a returning user, I want to create a free account, so I can process 500 images/month and access my history.
 
 **Acceptance Criteria:**
 
-- Email/password signup (email verification)
-- Login with JWT-based authentication
-- Free tier: 100 images/month quota
+- Full name + email/password signup via Supabase Auth
+- Login with Supabase-managed JWT authentication
+- Free tier: 500 images/month quota
 - Usage tracking displays remaining quota
 - Monthly quota resets automatically
 - User can view processing history
 - User can re-download previous CSVs
+- Account dashboard with sidebar navigation (Profile, History, Billing)
+- Default Initials field in profile (pre-fills upload initials)
+
+**Subscription Tiers (UI-Only for MVP — Stripe deferred to post-release):**
+
+| Tier   | Price  | Images/Month | Key Features                              |
+| ------ | ------ | ------------ | ----------------------------------------- |
+| Free   | $0/mo  | 500          | Standard AI, CSV exports, email support   |
+| First  | $5/mo  | 1,000        | Standard AI, CSV exports, email support   |
+| Second | $23/mo | 5,000        | Advanced AI, CSV + JSON, priority support |
+| Third  | $40/mo | 10,000       | Custom AI prompts, API access, 24/7 phone |
+
+**Note:** Plans & Pricing page and Billing tab are built as UI-only (static display) and gated behind `FEATURE_PLANS_PAGE` feature flag. Payment processing via Stripe will be integrated post-release after beta user validation.
 
 ---
 
@@ -404,7 +419,7 @@ Drop 10 images → Immediate processing
 - Public HTTPS URLs generated automatically
 - Zero external costs per image processed
 
-**Business Impact:** This architectural decision enables 100 free images/month sustainability.
+**Business Impact:** This architectural decision enables 500 free images/month sustainability.
 
 ---
 
@@ -502,8 +517,8 @@ Drop 10 images → Immediate processing
 - All traffic over HTTPS only
 - Temporary images deleted immediately after processing (max 10 sec lifetime)
 - No images stored on server after processing complete
-- User account passwords hashed with bcrypt (12 rounds minimum)
-- JWT tokens expire after 7 days
+- User account passwords hashed by Supabase Auth (bcrypt, automatic)
+- JWT tokens expire after 7 days (Supabase-managed)
 - Environment variables for all secrets (never in code)
 
 **NFR-S2: Abuse Prevention**
@@ -541,7 +556,7 @@ Drop 10 images → Immediate processing
 - Zero per-image external costs (self-hosted architecture)
 - OpenAI costs: $0.01-0.02 per image (GPT-5-mini)
 - Server costs: $5-10/month flat rate (Railway/Render)
-- Database: Free tier sufficient for 1,000 users (Postgres)
+- Database: Supabase free tier sufficient for 1,000 users (PostgreSQL + Auth)
 
 **NFR-SC3: Capacity Planning**
 
@@ -653,7 +668,7 @@ Due to project complexity, requirements must be decomposed into epics and bite-s
 
 **Positioning Statement:**
 
-> "Try Adobe Stock metadata generation properly before you buy. Process 100 images in 3 minutes. No signup required. 100 free images/month to start."
+> "Try Adobe Stock metadata generation properly before you buy. Process 100 images in 3 minutes. No signup required. 500 free images/month to start."
 
 **Target Market (MVP):** Individual stock photographers seeking speed and simplicity over feature complexity.
 

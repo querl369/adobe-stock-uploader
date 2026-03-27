@@ -4,7 +4,7 @@ import { logger } from '@utils/logger';
 
 dotenv.config();
 
-const envSchema = z.object({
+export const envSchema = z.object({
   // Server
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(3000),
@@ -28,6 +28,17 @@ const envSchema = z.object({
 
   // Database
   DB_PATH: z.string().default('data/batches.db'),
+
+  // Supabase
+  SUPABASE_URL: z.string().url().optional(),
+  SUPABASE_ANON_KEY: z.string().min(20).optional(),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(20).optional(),
+
+  // Feature Flags
+  FEATURE_PLANS_PAGE: z
+    .string()
+    .default('false')
+    .transform(val => ['true', '1'].includes(val.toLowerCase())),
 });
 
 export type AppConfig = z.infer<typeof envSchema>;
@@ -91,6 +102,20 @@ class ConfigService {
   get database() {
     return {
       path: this.config.DB_PATH,
+    };
+  }
+
+  get supabase() {
+    return {
+      url: this.config.SUPABASE_URL,
+      anonKey: this.config.SUPABASE_ANON_KEY,
+      serviceRoleKey: this.config.SUPABASE_SERVICE_ROLE_KEY,
+    };
+  }
+
+  get featureFlags() {
+    return {
+      plansPage: this.config.FEATURE_PLANS_PAGE,
     };
   }
 }

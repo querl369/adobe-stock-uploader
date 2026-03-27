@@ -8,6 +8,7 @@ dist
 .DS_Store
 .ignore/
 coverage/
+references/
 
 # Compiled TypeScript
 public/app.js
