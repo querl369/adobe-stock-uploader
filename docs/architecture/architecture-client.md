@@ -48,7 +48,7 @@ All existing UI components, styling, and state management patterns remain unchan
 
 | Technology            | Version | Purpose             |
 | --------------------- | ------- | ------------------- |
-| react-router-dom      | 6.x     | Client-side routing |
+| react-router-dom      | 7.x     | Client-side routing |
 | @supabase/supabase-js | 2.x     | Auth, database, RLS |
 
 ### Functionality
@@ -107,9 +107,9 @@ App (RouterProvider)
 
 ### Main App Component
 
-**Location**: `client/src/app.tsx` (508 lines)
+**Location**: `client/src/app.tsx` (thin `RouterProvider` wrapper — 8 lines)
 
-**Responsibilities**:
+**Responsibilities** (delegated to `client/src/pages/Home.tsx` — 305 lines):
 
 1. **State Management**: Images, initials, processing state
 2. **File Handling**: Upload, preview, validation
@@ -176,7 +176,7 @@ interface ProcessingState {
 
 ### DropZone Component
 
-**Location**: `client/src/app.tsx` (lines 32-86)
+**Location**: `client/src/components/DropZone.tsx`
 
 **Technology**: react-dnd with HTML5Backend
 
@@ -784,7 +784,7 @@ npm run build
 {
   "react": "^19.2.0",
   "react-dom": "^19.2.0",
-  "react-router-dom": "^6.x",
+  "react-router-dom": "^7.x",
   "react-dnd": "^16.0.1",
   "react-dnd-html5-backend": "^16.0.1",
   "@supabase/supabase-js": "^2.x",
@@ -812,7 +812,7 @@ npm run build
 
 **Architecture Type**: Component-Based SPA with Client-Side Routing
 **Build Tool**: Vite 7.2.2
-**Routing**: React Router v6 (`createBrowserRouter`)
+**Routing**: React Router v7 (`createBrowserRouter`)
 **Auth**: Supabase Auth (email/password, JWT, session management)
 **Database**: Supabase (PostgreSQL + RLS)
 **Styling**: Tailwind CSS + Custom Design System

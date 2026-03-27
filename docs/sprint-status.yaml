@@ -118,7 +118,7 @@ development_status:
   # Free tier: updated to 500 images/month
   epic-6: in-progress
   6-1-supabase-setup-auth-and-database-schema: done
-  6-2-react-router-and-app-shell: backlog
+  6-2-react-router-and-app-shell: done
   6-3-user-registration-and-signup-page: backlog
   6-4-user-login-and-authentication-page: backlog
   6-5-header-navigation-update: backlog
