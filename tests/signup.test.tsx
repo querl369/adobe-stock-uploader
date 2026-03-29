@@ -118,6 +118,23 @@ describe('SignUp', () => {
     });
   });
 
+  it('shows error when signup returns no session', async () => {
+    mockSignUp.mockResolvedValue({ data: { user: null, session: null }, error: null });
+    renderSignUp();
+
+    fireEvent.change(screen.getByLabelText('Full Name'), { target: { value: 'Alex Smith' } });
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'alex@example.com' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create Account' }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Signup succeeded but no session was created. Please try logging in.')
+      ).toBeTruthy();
+    });
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
   it('navigates to / on successful signup', async () => {
     mockSignUp.mockResolvedValue({ data: { user: {}, session: {} }, error: null });
     renderSignUp();
@@ -192,6 +209,28 @@ describe('SignUp', () => {
     expect(screen.getByText('Full name is required')).toBeTruthy();
     expect(screen.getByText('Email is required')).toBeTruthy();
     expect(screen.getByText('Password is required')).toBeTruthy();
+  });
+
+  it('rejects email with single-character TLD', () => {
+    renderSignUp();
+
+    fireEvent.change(screen.getByLabelText('Full Name'), { target: { value: 'Test User' } });
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'user@domain.c' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } });
+
+    const form = screen.getByRole('button').closest('form')!;
+    fireEvent.submit(form);
+
+    expect(screen.getByText('Please enter a valid email address')).toBeTruthy();
+  });
+
+  it('renders error messages with role="alert" for screen readers', () => {
+    renderSignUp();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create Account' }));
+
+    const alerts = screen.getAllByRole('alert');
+    expect(alerts.length).toBe(3);
   });
 
   it('clears field errors when user corrects input', async () => {

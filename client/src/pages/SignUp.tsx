@@ -25,7 +25,7 @@ export function SignUp() {
 
     if (!email.trim()) {
       newErrors.email = 'Email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    } else if (!/^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(email)) {
       newErrors.email = 'Please enter a valid email address';
     }
 
@@ -53,7 +53,7 @@ export function SignUp() {
     setIsSubmitting(true);
 
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: { data: { full_name: fullName } },
@@ -61,6 +61,11 @@ export function SignUp() {
 
       if (error) {
         setFormError(error.message);
+        return;
+      }
+
+      if (!data.session) {
+        setFormError('Signup succeeded but no session was created. Please try logging in.');
         return;
       }
 
@@ -82,12 +87,13 @@ export function SignUp() {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} noValidate className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="fullName">Full Name</Label>
             <Input
               id="fullName"
               type="text"
+              autoComplete="name"
               placeholder="Alex Smith"
               value={fullName}
               aria-invalid={!!errors.fullName}
@@ -98,7 +104,7 @@ export function SignUp() {
               }}
             />
             {errors.fullName && (
-              <p id="fullName-error" className="text-sm text-red-500">
+              <p id="fullName-error" role="alert" className="text-sm text-red-500">
                 {errors.fullName}
               </p>
             )}
@@ -109,6 +115,7 @@ export function SignUp() {
             <Input
               id="email"
               type="email"
+              autoComplete="email"
               placeholder="alex@example.com"
               value={email}
               aria-invalid={!!errors.email}
@@ -119,7 +126,7 @@ export function SignUp() {
               }}
             />
             {errors.email && (
-              <p id="email-error" className="text-sm text-red-500">
+              <p id="email-error" role="alert" className="text-sm text-red-500">
                 {errors.email}
               </p>
             )}
@@ -130,6 +137,7 @@ export function SignUp() {
             <Input
               id="password"
               type="password"
+              autoComplete="new-password"
               placeholder="Min. 8 characters"
               value={password}
               aria-invalid={!!errors.password}
@@ -140,13 +148,17 @@ export function SignUp() {
               }}
             />
             {errors.password && (
-              <p id="password-error" className="text-sm text-red-500">
+              <p id="password-error" role="alert" className="text-sm text-red-500">
                 {errors.password}
               </p>
             )}
           </div>
 
-          {formError && <p className="text-sm text-red-500 text-center">{formError}</p>}
+          {formError && (
+            <p role="alert" className="text-sm text-red-500 text-center">
+              {formError}
+            </p>
+          )}
 
           <button
             type="submit"
