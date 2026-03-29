@@ -1,6 +1,6 @@
 # Story 6.3: User Registration & Signup Page
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -57,38 +57,38 @@ so that I can process 500 images/month and save my history.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create signup form component (AC: 1, 2, 6)
-  - [ ] 1.1 Replace placeholder in `client/src/pages/SignUp.tsx` with full signup form
-  - [ ] 1.2 Add controlled inputs: fullName, email, password with `useState`
-  - [ ] 1.3 Add inline error state and display below each field
-  - [ ] 1.4 Add client-side validation (name required, email format, password min 8)
-  - [ ] 1.5 Style with centered card layout, shadcn/ui `Input`/`Label`, `lava-button` CTA
-  - [ ] 1.6 Add "Already have an account? Sign in" link using React Router `Link` to `/login`
+- [x] Task 1: Create signup form component (AC: 1, 2, 6)
+  - [x] 1.1 Replace placeholder in `client/src/pages/SignUp.tsx` with full signup form
+  - [x] 1.2 Add controlled inputs: fullName, email, password with `useState`
+  - [x] 1.3 Add inline error state and display below each field
+  - [x] 1.4 Add client-side validation (name required, email format, password min 8)
+  - [x] 1.5 Style with centered card layout, shadcn/ui `Input`/`Label`, `lava-button` CTA
+  - [x] 1.6 Add "Already have an account? Sign in" link using React Router `Link` to `/login`
 
-- [ ] Task 2: Implement Supabase signup integration (AC: 3, 5)
-  - [ ] 2.1 Import `supabase` from `@/lib/supabase` (nullable client)
-  - [ ] 2.2 On form submit: validate fields, then call `supabase.auth.signUp()`
-  - [ ] 2.3 Handle null supabase client — show toast error "Authentication service unavailable"
-  - [ ] 2.4 Handle Supabase errors — display inline below form (e.g., "User already registered")
-  - [ ] 2.5 On success: use React Router `useNavigate()` to redirect to `/`
-  - [ ] 2.6 Add loading state: disable button and show "Creating account..." during API call
+- [x] Task 2: Implement Supabase signup integration (AC: 3, 5)
+  - [x] 2.1 Import `supabase` from `@/lib/supabase` (nullable client)
+  - [x] 2.2 On form submit: validate fields, then call `supabase.auth.signUp()`
+  - [x] 2.3 Handle null supabase client — show toast error "Authentication service unavailable"
+  - [x] 2.4 Handle Supabase errors — display inline below form (e.g., "User already registered")
+  - [x] 2.5 On success: use React Router `useNavigate()` to redirect to `/`
+  - [x] 2.6 Add loading state: disable button and show "Creating account..." during API call
 
-- [ ] Task 3: Create database trigger migration (AC: 4)
-  - [ ] 3.1 Create `supabase/migrations/00006_create_profile_on_signup_trigger.sql`
-  - [ ] 3.2 Write trigger function `handle_new_user()` that:
+- [x] Task 3: Create database trigger migration (AC: 4)
+  - [x] 3.1 Create `supabase/migrations/00006_create_profile_on_signup_trigger.sql`
+  - [x] 3.2 Write trigger function `handle_new_user()` that:
     - Extracts `full_name` from `new.raw_user_meta_data`
     - Generates `default_initials` from first letters of name parts (max 5 chars)
     - Inserts into `public.profiles` with id, full_name, email, default_initials
-  - [ ] 3.3 Create trigger `on_auth_user_created` on `auth.users` AFTER INSERT
+  - [x] 3.3 Create trigger `on_auth_user_created` on `auth.users` AFTER INSERT
 
-- [ ] Task 4: Write tests (AC: 7)
-  - [ ] 4.1 Unit test: SignUp component renders form with all required fields
-  - [ ] 4.2 Unit test: Client-side validation shows inline errors for invalid input
-  - [ ] 4.3 Unit test: Successful signup calls supabase.auth.signUp with correct params
-  - [ ] 4.4 Unit test: Handles null supabase client gracefully
-  - [ ] 4.5 Unit test: Displays server-side error messages from Supabase
-  - [ ] 4.6 Unit test: Redirects to `/` on successful signup
-  - [ ] 4.7 Verify all existing 990+ tests still pass (`npm test`)
+- [x] Task 4: Write tests (AC: 7)
+  - [x] 4.1 Unit test: SignUp component renders form with all required fields
+  - [x] 4.2 Unit test: Client-side validation shows inline errors for invalid input
+  - [x] 4.3 Unit test: Successful signup calls supabase.auth.signUp with correct params
+  - [x] 4.4 Unit test: Handles null supabase client gracefully
+  - [x] 4.5 Unit test: Displays server-side error messages from Supabase
+  - [x] 4.6 Unit test: Redirects to `/` on successful signup
+  - [x] 4.7 Verify all existing 990+ tests still pass (`npm test`)
 
 ## Dev Notes
 
@@ -97,6 +97,7 @@ so that I can process 500 images/month and save my history.
 This is the **first auth UI story** in Epic 6. It builds on Story 6.1 (Supabase setup) and Story 6.2 (React Router with `/signup` route). The signup form replaces the current "Coming soon" placeholder at `client/src/pages/SignUp.tsx`. Story 6.4 (Login) depends on this story so test accounts can be created.
 
 Key decisions from Sprint Change Proposal 2026-03-26:
+
 - Supabase Auth handles signup, password hashing, JWT, and session management
 - No confirm password field (simpler UX per Figma design)
 - No React Hook Form — simple controlled inputs are sufficient
@@ -125,6 +126,7 @@ const { data, error } = await supabase.auth.signUp({
 ```
 
 **Supabase signUp Response:**
+
 ```typescript
 // Success: data.user is populated, data.session is populated (no email confirmation)
 // Error: error.message contains human-readable error (e.g., "User already registered")
@@ -138,8 +140,9 @@ navigate('/');
 ```
 
 **React Router v7 Navigation:**
+
 ```typescript
-import { useNavigate, Link } from 'react-router';  // v7 import pattern (NOT react-router-dom)
+import { useNavigate, Link } from 'react-router'; // v7 import pattern (NOT react-router-dom)
 
 const navigate = useNavigate();
 // After successful signup:
@@ -149,6 +152,7 @@ navigate('/');
 **CRITICAL:** This project uses React Router v7. Imports are from `'react-router'` NOT `'react-router-dom'`. See `client/src/routes.tsx` for the established pattern.
 
 **Toast Notifications:**
+
 ```typescript
 import { toast } from 'sonner';
 // For errors not tied to a specific field:
@@ -335,6 +339,7 @@ vi.mock('sonner', () => ({
 ```
 
 **Key test scenarios:**
+
 1. Renders form with Full Name, Email, Password fields and Create Account button
 2. Shows "Full name is required" error when submitting empty name
 3. Shows "Please enter a valid email address" for invalid email
@@ -346,6 +351,7 @@ vi.mock('sonner', () => ({
 9. Disables submit button during API call (loading state)
 
 **Rendering test pattern** (React Router v7 compatible):
+
 ```typescript
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
@@ -364,6 +370,7 @@ render(
 ### Previous Story Intelligence
 
 **From Story 6.2 (React Router):**
+
 - React Router v7 installed (`react-router` v7.13.2) — use `'react-router'` imports
 - Routes configured in `client/src/routes.tsx` — `/signup` already mapped to `SignUp` component
 - Root layout provides grain background, header, footer, Toaster — SignUp only renders form content
@@ -371,6 +378,7 @@ render(
 - 990 tests passing after Story 6.2
 
 **From Story 6.1 (Supabase):**
+
 - Frontend Supabase client is nullable: `export const supabase: SupabaseClient | null`
 - Located at `client/src/lib/supabase.ts`
 - Auth methods: `supabase.auth.signUp({ email, password, options: { data: { full_name } } })`
@@ -396,17 +404,20 @@ render(
 ### File Structure Requirements
 
 **New files to create:**
+
 ```
 supabase/migrations/00006_create_profile_on_signup_trigger.sql  # Profile auto-creation trigger
 tests/signup.test.tsx                                            # SignUp component tests
 ```
 
 **Files to modify:**
+
 ```
 client/src/pages/SignUp.tsx    # Replace placeholder with full signup form
 ```
 
 **Do NOT modify:**
+
 - `client/src/routes.tsx` — `/signup` route already exists
 - `client/src/pages/Root.tsx` — layout is fine
 - `client/src/lib/supabase.ts` — client is fine
@@ -441,8 +452,22 @@ client/src/pages/SignUp.tsx    # Replace placeholder with full signup form
 
 ### Agent Model Used
 
+claude-opus-4-6
+
 ### Debug Log References
+
+- Code review performed 2026-03-29: 7 issues found (2 High, 3 Medium, 2 Low), all fixed
 
 ### Completion Notes List
 
+- All 7 ACs implemented and verified
+- 1001 tests passing (1000 existing + 1 new multi-field validation test)
+- Code review fixes: added aria accessibility attributes to form inputs, hardened SQL trigger for empty names, improved test reliability with try/finally pattern
+
 ### File List
+
+- `client/src/pages/SignUp.tsx` — Replaced placeholder with full signup form (controlled inputs, validation, Supabase auth, accessibility)
+- `supabase/migrations/00006_create_profile_on_signup_trigger.sql` — New: profile auto-creation trigger on auth.users INSERT
+- `tests/signup.test.tsx` — New: 11 unit tests for SignUp component (rendering, validation, auth, navigation, loading state)
+- `package.json` — Added devDependencies: @testing-library/jest-dom, @testing-library/react, jsdom
+- `package-lock.json` — Lock file updated for new devDependencies

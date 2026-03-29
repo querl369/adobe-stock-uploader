@@ -90,12 +90,18 @@ export function SignUp() {
               type="text"
               placeholder="Alex Smith"
               value={fullName}
+              aria-invalid={!!errors.fullName}
+              aria-describedby={errors.fullName ? 'fullName-error' : undefined}
               onChange={e => {
                 setFullName(e.target.value);
                 if (errors.fullName) setErrors(prev => ({ ...prev, fullName: undefined }));
               }}
             />
-            {errors.fullName && <p className="text-sm text-red-500">{errors.fullName}</p>}
+            {errors.fullName && (
+              <p id="fullName-error" className="text-sm text-red-500">
+                {errors.fullName}
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -105,12 +111,18 @@ export function SignUp() {
               type="email"
               placeholder="alex@example.com"
               value={email}
+              aria-invalid={!!errors.email}
+              aria-describedby={errors.email ? 'email-error' : undefined}
               onChange={e => {
                 setEmail(e.target.value);
                 if (errors.email) setErrors(prev => ({ ...prev, email: undefined }));
               }}
             />
-            {errors.email && <p className="text-sm text-red-500">{errors.email}</p>}
+            {errors.email && (
+              <p id="email-error" className="text-sm text-red-500">
+                {errors.email}
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -120,12 +132,18 @@ export function SignUp() {
               type="password"
               placeholder="Min. 8 characters"
               value={password}
+              aria-invalid={!!errors.password}
+              aria-describedby={errors.password ? 'password-error' : undefined}
               onChange={e => {
                 setPassword(e.target.value);
                 if (errors.password) setErrors(prev => ({ ...prev, password: undefined }));
               }}
             />
-            {errors.password && <p className="text-sm text-red-500">{errors.password}</p>}
+            {errors.password && (
+              <p id="password-error" className="text-sm text-red-500">
+                {errors.password}
+              </p>
+            )}
           </div>
 
           {formError && <p className="text-sm text-red-500 text-center">{formError}</p>}

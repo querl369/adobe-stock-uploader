@@ -14,10 +14,12 @@ begin
     ' '
   );
 
-  -- Generate initials from first letter of each name part (max 5)
+  -- Generate initials from first letter of each non-empty name part (max 5)
   initials := '';
-  for i in 1..least(array_length(name_parts, 1), 5) loop
-    initials := initials || upper(left(name_parts[i], 1));
+  for i in 1..least(coalesce(array_length(name_parts, 1), 0), 5) loop
+    if length(trim(name_parts[i])) > 0 then
+      initials := initials || upper(left(trim(name_parts[i]), 1));
+    end if;
   end loop;
 
   insert into public.profiles (id, full_name, email, default_initials)

@@ -134,23 +134,25 @@ describe('SignUp', () => {
 
   it('shows toast error when supabase client is null', async () => {
     const { toast } = await import('sonner');
+
+    // Use vi.mocked to safely override the supabase module for this test
     const supabaseModule = await import('../client/src/lib/supabase');
-
-    // Temporarily set supabase to null
     const original = supabaseModule.supabase;
-    Object.defineProperty(supabaseModule, 'supabase', { value: null, writable: true });
 
-    renderSignUp();
+    try {
+      Object.defineProperty(supabaseModule, 'supabase', { value: null, writable: true });
 
-    fireEvent.change(screen.getByLabelText('Full Name'), { target: { value: 'Alex Smith' } });
-    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'alex@example.com' } });
-    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Create Account' }));
+      renderSignUp();
 
-    expect(toast.error).toHaveBeenCalledWith('Authentication service unavailable');
+      fireEvent.change(screen.getByLabelText('Full Name'), { target: { value: 'Alex Smith' } });
+      fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'alex@example.com' } });
+      fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Create Account' }));
 
-    // Restore
-    Object.defineProperty(supabaseModule, 'supabase', { value: original, writable: true });
+      expect(toast.error).toHaveBeenCalledWith('Authentication service unavailable');
+    } finally {
+      Object.defineProperty(supabaseModule, 'supabase', { value: original, writable: true });
+    }
   });
 
   it('disables submit button during API call', async () => {
@@ -180,6 +182,16 @@ describe('SignUp', () => {
       expect(button).toHaveTextContent('Create Account');
       expect(button).not.toBeDisabled();
     });
+  });
+
+  it('shows all validation errors when submitting completely empty form', () => {
+    renderSignUp();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create Account' }));
+
+    expect(screen.getByText('Full name is required')).toBeTruthy();
+    expect(screen.getByText('Email is required')).toBeTruthy();
+    expect(screen.getByText('Password is required')).toBeTruthy();
   });
 
   it('clears field errors when user corrects input', async () => {
