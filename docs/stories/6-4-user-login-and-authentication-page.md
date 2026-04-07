@@ -1,6 +1,6 @@
 # Story 6.4: User Login & Authentication Page
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -50,32 +50,32 @@ so that I can access my account and processing history.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create login form component (AC: 1, 2, 5)
-  - [ ] 1.1 Replace placeholder in `client/src/pages/Login.tsx` with full login form
-  - [ ] 1.2 Add controlled inputs: email, password with `useState`
-  - [ ] 1.3 Add inline error state and display below each field
-  - [ ] 1.4 Add client-side validation (email required + format, password required)
-  - [ ] 1.5 Style with centered card layout, shadcn/ui `Input`/`Label`, `lava-button` CTA
-  - [ ] 1.6 Add "Don't have an account? Sign up" link using React Router `Link` to `/signup`
-  - [ ] 1.7 Add "Forgot?" placeholder link next to password label
+- [x] Task 1: Create login form component (AC: 1, 2, 5)
+  - [x] 1.1 Replace placeholder in `client/src/pages/Login.tsx` with full login form
+  - [x] 1.2 Add controlled inputs: email, password with `useState`
+  - [x] 1.3 Add inline error state and display below each field
+  - [x] 1.4 Add client-side validation (email required + format, password required)
+  - [x] 1.5 Style with centered card layout, shadcn/ui `Input`/`Label`, `lava-button` CTA
+  - [x] 1.6 Add "Don't have an account? Sign up" link using React Router `Link` to `/signup`
+  - [x] 1.7 Add "Forgot?" placeholder link next to password label
 
-- [ ] Task 2: Implement Supabase login integration (AC: 3, 4)
-  - [ ] 2.1 Import `supabase` from `../lib/supabase` (nullable client)
-  - [ ] 2.2 On form submit: validate fields, then call `supabase.auth.signInWithPassword()`
-  - [ ] 2.3 Handle null supabase client — show toast error "Authentication service unavailable"
-  - [ ] 2.4 Handle Supabase auth errors — display generic "Invalid email or password" inline
-  - [ ] 2.5 On success: use React Router `useNavigate()` to redirect to `/`
-  - [ ] 2.6 Add loading state: disable button and show "Signing in..." during API call
+- [x] Task 2: Implement Supabase login integration (AC: 3, 4)
+  - [x] 2.1 Import `supabase` from `../lib/supabase` (nullable client)
+  - [x] 2.2 On form submit: validate fields, then call `supabase.auth.signInWithPassword()`
+  - [x] 2.3 Handle null supabase client — show toast error "Authentication service unavailable"
+  - [x] 2.4 Handle Supabase auth errors — display generic "Invalid email or password" inline
+  - [x] 2.5 On success: use React Router `useNavigate()` to redirect to `/`
+  - [x] 2.6 Add loading state: disable button and show "Signing in..." during API call
 
-- [ ] Task 3: Write tests (AC: 6)
-  - [ ] 3.1 Unit test: Login component renders form with Email, Password fields and Sign In button
-  - [ ] 3.2 Unit test: Client-side validation shows inline errors for invalid input
-  - [ ] 3.3 Unit test: Successful login calls supabase.auth.signInWithPassword with correct params
-  - [ ] 3.4 Unit test: Handles null supabase client gracefully (toast error)
-  - [ ] 3.5 Unit test: Displays generic error message on failed login
-  - [ ] 3.6 Unit test: Redirects to `/` on successful login
-  - [ ] 3.7 Unit test: Shows "Forgot?" link and "Sign up" link
-  - [ ] 3.8 Verify all existing tests still pass (`npm test`)
+- [x] Task 3: Write tests (AC: 6)
+  - [x] 3.1 Unit test: Login component renders form with Email, Password fields and Sign In button
+  - [x] 3.2 Unit test: Client-side validation shows inline errors for invalid input
+  - [x] 3.3 Unit test: Successful login calls supabase.auth.signInWithPassword with correct params
+  - [x] 3.4 Unit test: Handles null supabase client gracefully (toast error)
+  - [x] 3.5 Unit test: Displays generic error message on failed login
+  - [x] 3.6 Unit test: Redirects to `/` on successful login
+  - [x] 3.7 Unit test: Shows "Forgot?" link and "Sign up" link
+  - [x] 3.8 Verify all existing tests still pass (`npm test`)
 
 ## Dev Notes
 
@@ -84,6 +84,7 @@ so that I can access my account and processing history.
 This is the **second auth UI story** in Epic 6. It builds on Story 6.1 (Supabase setup), Story 6.2 (React Router with `/login` route), and Story 6.3 (Signup — so test accounts exist). The login form replaces the current "Coming soon" placeholder at `client/src/pages/Login.tsx`. Story 6.5 (Header Navigation) depends on this story for end-to-end auth flow.
 
 Key decisions from Sprint Change Proposal 2026-03-26:
+
 - Supabase Auth handles login, session management, JWT, and rate limiting
 - No "Remember me" toggle — Supabase sessions persist by default (7-day expiry)
 - No email confirmation flow — disabled for MVP
@@ -111,6 +112,7 @@ const { data, error } = await supabase.auth.signInWithPassword({
 ```
 
 **Supabase signInWithPassword Response:**
+
 ```typescript
 // Success: data.user and data.session populated
 // Error: error.message contains details (e.g., "Invalid login credentials")
@@ -126,8 +128,9 @@ navigate('/');
 **CRITICAL: Always show generic "Invalid email or password"** — never expose the actual Supabase error message (e.g., "Email not confirmed", "Invalid login credentials") as it could leak information about which emails are registered.
 
 **React Router v7 Navigation:**
+
 ```typescript
-import { useNavigate, Link } from 'react-router';  // v7 import — NOT 'react-router-dom'
+import { useNavigate, Link } from 'react-router'; // v7 import — NOT 'react-router-dom'
 
 const navigate = useNavigate();
 // After successful login:
@@ -137,6 +140,7 @@ navigate('/');
 **CRITICAL:** This project uses React Router v7. Imports are from `'react-router'` NOT `'react-router-dom'`. See `client/src/routes.tsx` for the established pattern.
 
 **Toast Notifications:**
+
 ```typescript
 import { toast } from 'sonner';
 // For errors not tied to a specific field:
@@ -256,6 +260,7 @@ vi.mock('sonner', () => ({
 ```
 
 **Key test scenarios:**
+
 1. Renders form with Email, Password fields and Sign In button
 2. Shows "Email is required" error when submitting empty email
 3. Shows "Please enter a valid email address" for invalid email format
@@ -268,6 +273,7 @@ vi.mock('sonner', () => ({
 10. Renders "Forgot?" link and "Don't have an account? Sign up" link to `/signup`
 
 **Rendering test pattern** (React Router v7 compatible):
+
 ```typescript
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
@@ -286,6 +292,7 @@ render(
 ### Previous Story Intelligence
 
 **From Story 6.3 (Signup — direct predecessor):**
+
 - SignUp.tsx replaces placeholder with full form — Login.tsx should follow identical structure
 - Nullable supabase client pattern established: check for null, show toast if unavailable
 - Controlled inputs with `useState` — no React Hook Form
@@ -297,12 +304,14 @@ render(
 - Centered card layout: `flex-1 flex items-center justify-center px-4` outer, `w-full max-w-sm space-y-6` inner
 
 **From Story 6.2 (React Router):**
+
 - React Router v7 installed (`react-router` v7.13.2) — use `'react-router'` imports
 - Routes configured in `client/src/routes.tsx` — `/login` already mapped to `Login` component
 - Root layout provides grain background, header, footer, Toaster — Login only renders form content
 - Placeholder pages use `flex-1 flex items-center justify-center` outer container
 
 **From Story 6.1 (Supabase):**
+
 - Frontend Supabase client is nullable: `export const supabase: SupabaseClient | null`
 - Located at `client/src/lib/supabase.ts`
 - Auth method: `supabase.auth.signInWithPassword({ email, password })`
@@ -327,16 +336,19 @@ render(
 ### File Structure Requirements
 
 **New files to create:**
+
 ```
 tests/login.test.tsx    # Login component tests
 ```
 
 **Files to modify:**
+
 ```
 client/src/pages/Login.tsx    # Replace placeholder with full login form
 ```
 
 **Do NOT modify:**
+
 - `client/src/routes.tsx` — `/login` route already exists
 - `client/src/pages/Root.tsx` — layout is fine
 - `client/src/lib/supabase.ts` — client is fine
@@ -371,8 +383,31 @@ client/src/pages/Login.tsx    # Replace placeholder with full login form
 
 ### Agent Model Used
 
+Claude Opus 4.6 (1M context)
+
 ### Debug Log References
+
+None — clean implementation, no debugging needed.
 
 ### Completion Notes List
 
+- Replaced placeholder Login.tsx with full login form matching SignUp page design patterns
+- Implemented email + password controlled inputs with client-side validation
+- Integrated Supabase signInWithPassword with null-client check and generic error messages
+- Added "Forgot?" placeholder link and "Sign up" navigation link
+- Loading state disables button and shows "Signing in..." during API call
+- 14 unit tests covering all ACs: form rendering, validation, auth integration, navigation, error handling
+- Full test suite passes (37 files, 1017 tests) — no regressions
+
+### Change Log
+
+- 2026-04-07: Implemented Story 6.4 — Login form with Supabase auth, validation, tests
+- 2026-04-07: Code review fixes — 7 issues (2H, 3M, 2L): Figma alignment (label, subtitle, placeholder, Forgot? styling), Forgot? span→button for accessibility, test improvements (element type assertion, negative security assertion, button disambiguation)
+- 2026-04-07: Code review 2 fixes — 3M issues: autocomplete attributes on inputs, formError cleared on field edit, negative navigation assertions in failure tests
+
 ### File List
+
+- `client/src/pages/Login.tsx` — Modified: replaced placeholder with full login form
+- `tests/login.test.tsx` — Created: 14 unit tests for Login component
+- `docs/stories/6-4-user-login-and-authentication-page.md` — Modified: task checkboxes, status, dev agent record
+- `docs/sprint-status.yaml` — Modified: story status updated
