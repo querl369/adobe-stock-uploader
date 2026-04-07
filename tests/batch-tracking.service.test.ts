@@ -327,6 +327,37 @@ describe('BatchTrackingService - Story 2.6', () => {
       expect(updated!.images[0].status).toBe('failed');
       expect(updated!.images[0].error).toBe('Failed to process');
     });
+
+    it('should not double-count when updateImageResult is called multiple times for same image', () => {
+      const batch = batchTrackingService.createBatch({
+        sessionId: 'session-123',
+        files: [
+          { id: 'file-1', filename: 'image1.jpg' },
+          { id: 'file-2', filename: 'image2.jpg' },
+        ],
+      });
+
+      const result1 = {
+        success: true,
+        filename: 'image1.jpg',
+        metadata: { filename: 'image1.jpg', title: 'Title 1', keywords: 'k1', category: 1 },
+      };
+      const result2 = {
+        success: true,
+        filename: 'image2.jpg',
+        metadata: { filename: 'image2.jpg', title: 'Title 2', keywords: 'k2', category: 2 },
+      };
+
+      // Simulate accumulated progress callbacks: first call has 1 result, second has both
+      batchTrackingService.updateImageResult(batch.batchId, 'image1.jpg', result1);
+      batchTrackingService.updateImageResult(batch.batchId, 'image1.jpg', result1); // duplicate
+      batchTrackingService.updateImageResult(batch.batchId, 'image2.jpg', result2);
+      batchTrackingService.updateImageResult(batch.batchId, 'image1.jpg', result1); // duplicate again
+
+      const updated = batchTrackingService.getBatch(batch.batchId);
+      expect(updated!.progress.completed).toBe(2);
+      expect(updated!.progress.pending).toBe(0);
+    });
   });
 
   describe('Mark Image Processing', () => {

@@ -267,8 +267,10 @@ class BatchTrackingService {
       image.error = result.error.message;
     }
 
-    // Update progress counts and check for batch completion
-    this.updateProgressCounts(batch, previousStatus, image.status);
+    // Only update progress counts when status actually changes
+    if (previousStatus !== image.status) {
+      this.updateProgressCounts(batch, previousStatus, image.status);
+    }
     batch.updatedAt = new Date();
 
     if (this.isBatchComplete(batch)) {

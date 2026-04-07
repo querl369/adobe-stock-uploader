@@ -14,11 +14,15 @@ vi.mock('react-router', async () => {
 });
 
 const mockSignUp = vi.fn();
+let mockSupabaseValue: unknown = {
+  auth: {
+    signUp: (...args: unknown[]) => mockSignUp(...args),
+  },
+};
+
 vi.mock('../client/src/lib/supabase', () => ({
-  supabase: {
-    auth: {
-      signUp: (...args: unknown[]) => mockSignUp(...args),
-    },
+  get supabase() {
+    return mockSupabaseValue;
   },
 }));
 
@@ -37,17 +41,22 @@ function renderSignUp() {
 describe('SignUp', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSupabaseValue = {
+      auth: {
+        signUp: (...args: unknown[]) => mockSignUp(...args),
+      },
+    };
   });
 
   it('renders form with all required fields', () => {
     renderSignUp();
 
-    expect(screen.getByRole('heading', { name: 'Create Account' })).toBeTruthy();
-    expect(screen.getByLabelText('Full Name')).toBeTruthy();
-    expect(screen.getByLabelText('Email')).toBeTruthy();
-    expect(screen.getByLabelText('Password')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Create Account' })).toBeTruthy();
-    expect(screen.getByText('Sign in')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Create Account' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Full Name')).toBeInTheDocument();
+    expect(screen.getByLabelText('Email Address')).toBeInTheDocument();
+    expect(screen.getByLabelText('Password')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create Account' })).toBeInTheDocument();
+    expect(screen.getByText('Sign in')).toBeInTheDocument();
   });
 
   it('shows "Full name is required" error when submitting empty name', async () => {
@@ -55,32 +64,33 @@ describe('SignUp', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Create Account' }));
 
-    expect(screen.getByText('Full name is required')).toBeTruthy();
+    expect(screen.getByText('Full name is required')).toBeInTheDocument();
   });
 
   it('shows email validation error for invalid email', async () => {
     renderSignUp();
 
     fireEvent.change(screen.getByLabelText('Full Name'), { target: { value: 'Test User' } });
-    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'invalid-email' } });
+    fireEvent.change(screen.getByLabelText('Email Address'), {
+      target: { value: 'invalid-email' },
+    });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create Account' }));
 
-    // Use form submit directly — jsdom's type="email" constraint blocks click-based submit
-    const form = screen.getByRole('button').closest('form')!;
-    fireEvent.submit(form);
-
-    expect(screen.getByText('Please enter a valid email address')).toBeTruthy();
+    expect(screen.getByText('Please enter a valid email address')).toBeInTheDocument();
   });
 
   it('shows password validation error for short password', async () => {
     renderSignUp();
 
     fireEvent.change(screen.getByLabelText('Full Name'), { target: { value: 'Test User' } });
-    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'test@example.com' } });
+    fireEvent.change(screen.getByLabelText('Email Address'), {
+      target: { value: 'test@example.com' },
+    });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'short' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create Account' }));
 
-    expect(screen.getByText('Password must be at least 8 characters')).toBeTruthy();
+    expect(screen.getByText('Password must be at least 8 characters')).toBeInTheDocument();
   });
 
   it('calls supabase.auth.signUp with correct parameters on valid submission', async () => {
@@ -88,7 +98,9 @@ describe('SignUp', () => {
     renderSignUp();
 
     fireEvent.change(screen.getByLabelText('Full Name'), { target: { value: 'Alex Smith' } });
-    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'alex@example.com' } });
+    fireEvent.change(screen.getByLabelText('Email Address'), {
+      target: { value: 'alex@example.com' },
+    });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create Account' }));
 
@@ -109,12 +121,14 @@ describe('SignUp', () => {
     renderSignUp();
 
     fireEvent.change(screen.getByLabelText('Full Name'), { target: { value: 'Alex Smith' } });
-    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'alex@example.com' } });
+    fireEvent.change(screen.getByLabelText('Email Address'), {
+      target: { value: 'alex@example.com' },
+    });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create Account' }));
 
     await waitFor(() => {
-      expect(screen.getByText('User already registered')).toBeTruthy();
+      expect(screen.getByText('User already registered')).toBeInTheDocument();
     });
   });
 
@@ -123,7 +137,9 @@ describe('SignUp', () => {
     renderSignUp();
 
     fireEvent.change(screen.getByLabelText('Full Name'), { target: { value: 'Alex Smith' } });
-    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'alex@example.com' } });
+    fireEvent.change(screen.getByLabelText('Email Address'), {
+      target: { value: 'alex@example.com' },
+    });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create Account' }));
 
@@ -134,25 +150,36 @@ describe('SignUp', () => {
 
   it('shows toast error when supabase client is null', async () => {
     const { toast } = await import('sonner');
+    mockSupabaseValue = null;
 
-    // Use vi.mocked to safely override the supabase module for this test
-    const supabaseModule = await import('../client/src/lib/supabase');
-    const original = supabaseModule.supabase;
+    renderSignUp();
 
-    try {
-      Object.defineProperty(supabaseModule, 'supabase', { value: null, writable: true });
+    fireEvent.change(screen.getByLabelText('Full Name'), { target: { value: 'Alex Smith' } });
+    fireEvent.change(screen.getByLabelText('Email Address'), {
+      target: { value: 'alex@example.com' },
+    });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create Account' }));
 
-      renderSignUp();
+    expect(toast.error).toHaveBeenCalledWith('Authentication service unavailable');
+  });
 
-      fireEvent.change(screen.getByLabelText('Full Name'), { target: { value: 'Alex Smith' } });
-      fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'alex@example.com' } });
-      fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } });
-      fireEvent.click(screen.getByRole('button', { name: 'Create Account' }));
+  it('shows generic error when signup throws network error', async () => {
+    mockSignUp.mockRejectedValue(new Error('Network request failed'));
+    renderSignUp();
 
-      expect(toast.error).toHaveBeenCalledWith('Authentication service unavailable');
-    } finally {
-      Object.defineProperty(supabaseModule, 'supabase', { value: original, writable: true });
-    }
+    fireEvent.change(screen.getByLabelText('Full Name'), { target: { value: 'Alex Smith' } });
+    fireEvent.change(screen.getByLabelText('Email Address'), {
+      target: { value: 'alex@example.com' },
+    });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create Account' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Something went wrong. Please try again.')).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole('button', { name: 'Create Account' })).not.toBeDisabled();
   });
 
   it('disables submit button during API call', async () => {
@@ -165,7 +192,9 @@ describe('SignUp', () => {
     renderSignUp();
 
     fireEvent.change(screen.getByLabelText('Full Name'), { target: { value: 'Alex Smith' } });
-    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'alex@example.com' } });
+    fireEvent.change(screen.getByLabelText('Email Address'), {
+      target: { value: 'alex@example.com' },
+    });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } });
 
     const button = screen.getByRole('button');
@@ -189,20 +218,18 @@ describe('SignUp', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Create Account' }));
 
-    expect(screen.getByText('Full name is required')).toBeTruthy();
-    expect(screen.getByText('Email is required')).toBeTruthy();
-    expect(screen.getByText('Password is required')).toBeTruthy();
+    expect(screen.getByText('Full name is required')).toBeInTheDocument();
+    expect(screen.getByText('Email is required')).toBeInTheDocument();
+    expect(screen.getByText('Password is required')).toBeInTheDocument();
   });
 
   it('clears field errors when user corrects input', async () => {
     renderSignUp();
 
-    // Submit empty form to trigger errors
     fireEvent.click(screen.getByRole('button', { name: 'Create Account' }));
-    expect(screen.getByText('Full name is required')).toBeTruthy();
+    expect(screen.getByText('Full name is required')).toBeInTheDocument();
 
-    // Type in the field to clear error
     fireEvent.change(screen.getByLabelText('Full Name'), { target: { value: 'A' } });
-    expect(screen.queryByText('Full name is required')).toBeNull();
+    expect(screen.queryByText('Full name is required')).not.toBeInTheDocument();
   });
 });

@@ -457,17 +457,20 @@ claude-opus-4-6
 ### Debug Log References
 
 - Code review performed 2026-03-29: 7 issues found (2 High, 3 Medium, 2 Low), all fixed
+- Code review 2 performed 2026-03-30: 7 issues found (2 High, 3 Medium, 2 Low), all fixed
 
 ### Completion Notes List
 
 - All 7 ACs implemented and verified
-- 1001 tests passing (1000 existing + 1 new multi-field validation test)
-- Code review fixes: added aria accessibility attributes to form inputs, hardened SQL trigger for empty names, improved test reliability with try/finally pattern
+- 1002 tests passing (990 existing + 12 new signup tests)
+- Code review 1 fixes: added aria accessibility attributes to form inputs, hardened SQL trigger for empty names, improved test reliability with try/finally pattern
+- Code review 2 fixes: added catch block for network errors, added noValidate for consistent inline validation UX, added network error test, replaced toBeTruthy with toBeInTheDocument, improved null supabase mock pattern
 
 ### File List
 
 - `client/src/pages/SignUp.tsx` — Replaced placeholder with full signup form (controlled inputs, validation, Supabase auth, accessibility)
 - `supabase/migrations/00006_create_profile_on_signup_trigger.sql` — New: profile auto-creation trigger on auth.users INSERT
-- `tests/signup.test.tsx` — New: 11 unit tests for SignUp component (rendering, validation, auth, navigation, loading state)
+- `tests/signup.test.tsx` — New: 12 unit tests for SignUp component (rendering, validation, auth, navigation, loading state, network errors)
 - `package.json` — Added devDependencies: @testing-library/jest-dom, @testing-library/react, jsdom
 - `package-lock.json` — Lock file updated for new devDependencies
+- `docs/sprint-status.yaml` — Updated story status to done
