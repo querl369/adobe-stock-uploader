@@ -8,24 +8,29 @@ Adobe Stock Uploader — an AI-powered web app for photographers to upload image
 
 ## Commands
 
-| Task                       | Command                                         |
-| -------------------------- | ----------------------------------------------- |
-| Dev (client + server)      | `npm run dev`                                   |
-| Dev client only            | `npm run dev:client`                            |
-| Dev server only            | `npm run dev:server`                            |
-| Run all tests              | `npm test`                                      |
-| Run tests in watch mode    | `npm run test:watch`                            |
-| Run a single test file     | `npx vitest run tests/metadata.service.test.ts` |
-| Run tests matching pattern | `npx vitest run -t "pattern"`                   |
-| Test coverage              | `npm run test:coverage`                         |
-| Build (Vite client)        | `npm run build`                                 |
-| Production start           | `npm start`                                     |
+| Task                       | Command                                                                                                             |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Browser automation         | `playwright-cli` skill in `.claude/skills/playwright-cli/` — use for screenshots, form testing, visual verification |
+| Dev (client + server)      | `npm run dev`                                                                                                       |
+| Dev client only            | `npm run dev:client`                                                                                                |
+| Dev server only            | `npm run dev:server`                                                                                                |
+| Run all tests              | `npm test`                                                                                                          |
+| Run tests in watch mode    | `npm run test:watch`                                                                                                |
+| Run a single test file     | `npx vitest run tests/metadata.service.test.ts`                                                                     |
+| Run tests matching pattern | `npx vitest run -t "pattern"`                                                                                       |
+| Test coverage              | `npm run test:coverage`                                                                                             |
+| Build (Vite client)        | `npm run build`                                                                                                     |
+| Production start           | `npm start`                                                                                                         |
 
 There is no separate lint command. Formatting is handled by Prettier via lint-staged on pre-commit.
 
 ## Architecture
 
 **Two-part app:** React SPA (Vite, port 5173) + Express API (port 3000). Vite proxies `/api` to Express in dev.
+
+### Figma Reference
+
+`references/Elegant Minimalist Web App (1)/src/` contains exact UI specs from Figma. **Always compare implementation against these files for UI stories** — check layout, typography, class names, placeholders, and label text.
 
 ### Backend (`src/`)
 
@@ -60,6 +65,7 @@ Configured in both `tsconfig.json` and `vitest.config.ts`:
 
 ## Testing
 
+- **playwright-cli** skill available at `.claude/skills/playwright-cli/` — use for visual verification, form testing, screenshots. For ngrok URLs, bypass interstitial with `playwright-cli run-code "async page => await page.setExtraHTTPHeaders({'ngrok-skip-browser-warning': 'true'})"`.
 - **Framework:** Vitest with `globals: true` (no explicit imports for `describe`, `it`, `expect`)
 - **All tests in** `tests/` directory, named `*.test.ts`
 - **Patterns:** Heavy `vi.mock()` for external deps (OpenAI, config, logger, fs). Lightweight services (CategoryService) used as real instances. Factory helpers like `createValidTestMetadata()` for test data

@@ -9,6 +9,7 @@ dist
 .ignore/
 coverage/
 references/
+.playwright-cli
 
 # Compiled TypeScript
 public/app.js
