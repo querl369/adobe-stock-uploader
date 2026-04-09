@@ -59,24 +59,36 @@ describe('Router Configuration', () => {
     expect(accountRoute).toBeDefined();
   });
 
-  it('should define nested account routes', async () => {
+  it('should define nested account routes with ProtectedRoute wrapper', async () => {
     await loadRoutes();
     const root = capturedRoutes[0] as {
-      children: Array<{ path?: string; children?: Array<{ path?: string; index?: boolean }> }>;
+      children: Array<{
+        path?: string;
+        children?: Array<{
+          path?: string;
+          index?: boolean;
+          children?: Array<{ path?: string; index?: boolean }>;
+        }>;
+      }>;
     };
     const accountRoute = root.children.find(c => c.path === 'account');
 
     expect(accountRoute).toBeDefined();
     expect(accountRoute!.children).toBeDefined();
-    expect(accountRoute!.children).toHaveLength(3);
+    // ProtectedRoute wraps a single pathless AccountLayout child
+    expect(accountRoute!.children).toHaveLength(1);
 
-    const profileRoute = accountRoute!.children!.find(c => c.index === true);
+    const layoutRoute = accountRoute!.children![0];
+    expect(layoutRoute.children).toBeDefined();
+    expect(layoutRoute.children).toHaveLength(3);
+
+    const profileRoute = layoutRoute.children!.find(c => c.index === true);
     expect(profileRoute).toBeDefined();
 
-    const historyRoute = accountRoute!.children!.find(c => c.path === 'history');
+    const historyRoute = layoutRoute.children!.find(c => c.path === 'history');
     expect(historyRoute).toBeDefined();
 
-    const billingRoute = accountRoute!.children!.find(c => c.path === 'billing');
+    const billingRoute = layoutRoute.children!.find(c => c.path === 'billing');
     expect(billingRoute).toBeDefined();
   });
 
@@ -84,7 +96,13 @@ describe('Router Configuration', () => {
     await loadRoutes();
     const root = capturedRoutes[0] as {
       Component: unknown;
-      children: Array<{ Component: unknown; children?: Array<{ Component: unknown }> }>;
+      children: Array<{
+        Component: unknown;
+        children?: Array<{
+          Component: unknown;
+          children?: Array<{ Component: unknown }>;
+        }>;
+      }>;
     };
 
     // Root has a Component
@@ -94,10 +112,16 @@ describe('Router Configuration', () => {
     for (const child of root.children) {
       expect(child.Component).toBeDefined();
 
-      // Nested account children also have Components
+      // Nested children also have Components (including deeply nested account routes)
       if ('children' in child && child.children) {
         for (const nested of child.children) {
           expect(nested.Component).toBeDefined();
+
+          if ('children' in nested && nested.children) {
+            for (const deepNested of nested.children) {
+              expect(deepNested.Component).toBeDefined();
+            }
+          }
         }
       }
     }

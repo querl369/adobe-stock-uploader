@@ -9,6 +9,7 @@ import { AccountProfile } from './pages/AccountProfile';
 import { History } from './pages/History';
 import { Billing } from './pages/Billing';
 import { ErrorPage } from './pages/ErrorPage';
+import { ProtectedRoute } from './components/ProtectedRoute';
 
 export const router = createBrowserRouter([
   {
@@ -22,11 +23,16 @@ export const router = createBrowserRouter([
       { path: 'plans', Component: Plans },
       {
         path: 'account',
-        Component: AccountLayout,
+        Component: ProtectedRoute,
         children: [
-          { index: true, Component: AccountProfile },
-          { path: 'history', Component: History },
-          { path: 'billing', Component: Billing },
+          {
+            Component: AccountLayout,
+            children: [
+              { index: true, Component: AccountProfile },
+              { path: 'history', Component: History },
+              { path: 'billing', Component: Billing },
+            ],
+          },
         ],
       },
     ],
