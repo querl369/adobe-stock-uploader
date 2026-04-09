@@ -123,7 +123,7 @@ development_status:
   6-4-user-login-and-authentication-page: done  # Code review approved 2026-04-07, 7 issues fixed (2H, 3M, 2L)
   6-5-header-navigation-update: done
   6-6-account-layout-and-sidebar-routing: done
-  6-7-account-profile-and-settings: backlog
+  6-7-account-profile-and-settings: review
   6-8-processing-history-and-csv-re-download: backlog
   6-9-monthly-usage-tracking-and-quota-enforcement: backlog
   6-10-plans-and-pricing-page: backlog  # Feature-flagged (FEATURE_PLANS_PAGE)

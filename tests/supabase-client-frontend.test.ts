@@ -18,6 +18,9 @@ describe('Frontend Supabase Client', () => {
   });
 
   it('should export supabase as null when env vars are missing', async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', '');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', '');
+
     const { supabase } = await import('../client/src/lib/supabase');
     expect(supabase).toBeNull();
     expect(mockCreateClient).not.toHaveBeenCalled();
@@ -34,6 +37,7 @@ describe('Frontend Supabase Client', () => {
 
   it('should export null when only URL is present but anon key is missing', async () => {
     vi.stubEnv('VITE_SUPABASE_URL', 'https://test.supabase.co');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', '');
 
     const { supabase } = await import('../client/src/lib/supabase');
     expect(supabase).toBeNull();
