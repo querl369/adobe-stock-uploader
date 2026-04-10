@@ -26,15 +26,13 @@ vi.mock('../src/config/app.config', () => ({
 vi.mock('../src/config/container', () => ({
   services: {
     imageProcessing: {
-      processBatch: vi
-        .fn()
-        .mockResolvedValue([
-          {
-            success: true,
-            filename: 'test.jpg',
-            metadata: { title: 'Test', keywords: 'test', category: 1 },
-          },
-        ]),
+      processBatch: vi.fn().mockResolvedValue([
+        {
+          success: true,
+          filename: 'test.jpg',
+          metadata: { title: 'Test', keywords: 'test', category: 1 },
+        },
+      ]),
     },
   },
 }));
@@ -61,6 +59,16 @@ const mockLogger = {
 vi.mock('../src/utils/logger', () => ({
   logger: mockLogger,
   createChildLogger: vi.fn().mockReturnValue(mockChildLogger),
+}));
+
+// Story 6.8: Mock supabase admin client (auth.middleware.ts dependency)
+vi.mock('../src/lib/supabase', () => ({
+  supabaseAdmin: null,
+}));
+
+// Story 6.8: Mock auth middleware to avoid async leaks in parallel test runs
+vi.mock('../src/api/middleware/auth.middleware', () => ({
+  extractUserId: vi.fn().mockResolvedValue(null),
 }));
 
 describe('Batch Routes - Story 2.6', () => {

@@ -64,6 +64,11 @@ vi.mock('better-sqlite3', () => ({
   default: vi.fn(),
 }));
 
+// Story 6.8: Mock supabase admin client (auth.middleware.ts dependency)
+vi.mock('../src/lib/supabase', () => ({
+  supabaseAdmin: null,
+}));
+
 // Create mock persistence service (hoisted so vi.mock factory can reference them)
 const {
   mockGetBatchesBySessionDb,

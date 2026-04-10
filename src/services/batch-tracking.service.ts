@@ -9,6 +9,7 @@
 
 import { randomUUID } from 'crypto';
 import { logger } from '@utils/logger';
+import { supabaseAdmin } from '../lib/supabase';
 import type { BatchPersistenceService } from './batch-persistence.service';
 import type {
   BatchState,
@@ -52,7 +53,7 @@ class BatchTrackingService {
    * @returns The created batch state with batchId
    */
   createBatch(options: CreateBatchOptions): BatchState {
-    const { sessionId, files } = options;
+    const { sessionId, files, userId } = options;
     const batchId = randomUUID();
     const now = new Date();
 
@@ -66,6 +67,7 @@ class BatchTrackingService {
     const batch: BatchState = {
       batchId,
       sessionId,
+      userId,
       status: 'pending',
       progress: {
         total: files.length,
@@ -260,17 +262,14 @@ class BatchTrackingService {
       return;
     }
 
-    const previousStatus = image.status;
     image.result = result;
     image.status = result.success ? 'completed' : 'failed';
     if (!result.success && result.error) {
       image.error = result.error.message;
     }
 
-    // Only update progress counts when status actually changes
-    if (previousStatus !== image.status) {
-      this.updateProgressCounts(batch, previousStatus, image.status);
-    }
+    // Don't update progress counts here — updateBatchProgress handles absolute
+    // counts during processing, and completeBatch recalculates from image statuses.
     batch.updatedAt = new Date();
 
     if (this.isBatchComplete(batch)) {
@@ -334,7 +333,43 @@ class BatchTrackingService {
     batch.csvFileName = csvFileName;
     batch.updatedAt = new Date();
 
+    // Update SQLite record (persisted before CSV generation, so csv_path was null)
+    if (this.persistenceService) {
+      try {
+        this.persistenceService.updateCsvInfo(batchId, csvPath, csvFileName);
+      } catch (error) {
+        logger.warn(
+          { batchId, error: error instanceof Error ? error.message : 'Unknown' },
+          'Failed to update CSV info in database'
+        );
+      }
+    }
+
     logger.info({ batchId, csvFileName }, 'CSV associated with batch');
+
+    // Story 6.8: Update Supabase record with csv_filename if authenticated user
+    if (batch.userId && supabaseAdmin) {
+      Promise.resolve(
+        supabaseAdmin
+          .from('processing_batches')
+          .update({ csv_filename: csvFileName })
+          .eq('id', batchId)
+      )
+        .then(({ error }: { error: { message: string } | null }) => {
+          if (error) {
+            logger.warn(
+              { batchId, error: error.message },
+              'Failed to update csv_filename in Supabase'
+            );
+          }
+        })
+        .catch((error: unknown) => {
+          logger.warn(
+            { batchId, error: error instanceof Error ? error.message : 'Unknown' },
+            'Supabase csv_filename update error'
+          );
+        });
+    }
   }
 
   /**
@@ -402,7 +437,20 @@ class BatchTrackingService {
    * Mark batch as complete
    */
   private completeBatch(batch: BatchState): void {
-    const allFailed = batch.progress.failed === batch.progress.total;
+    // Guard: don't run twice (can be triggered from both onProgress and final loop)
+    if (batch.status === 'completed' || batch.status === 'failed') return;
+
+    // Recalculate progress from authoritative image statuses to fix double-counting
+    // between updateBatchProgress (absolute) and updateImageResult (incremental)
+    const failedCount = batch.images.filter(img => img.status === 'failed').length;
+    const completedCount = batch.images.filter(img => img.status === 'completed').length;
+
+    batch.progress.completed = completedCount + failedCount;
+    batch.progress.failed = failedCount;
+    batch.progress.processing = 0;
+    batch.progress.pending = 0;
+
+    const allFailed = failedCount === batch.progress.total;
 
     batch.status = allFailed ? 'failed' : 'completed';
     batch.completedAt = new Date();
@@ -413,8 +461,8 @@ class BatchTrackingService {
       {
         batchId: batch.batchId,
         status: batch.status,
-        successful: batch.progress.completed,
-        failed: batch.progress.failed,
+        successful: completedCount,
+        failed: failedCount,
         total: batch.progress.total,
       },
       'Batch processing completed'
@@ -430,6 +478,36 @@ class BatchTrackingService {
           'Failed to persist batch to database — continuing with in-memory only'
         );
       }
+    }
+
+    // Story 6.8: Persist to Supabase for authenticated users (non-fatal)
+    if (batch.userId && supabaseAdmin) {
+      Promise.resolve(
+        supabaseAdmin.from('processing_batches').insert({
+          id: batch.batchId,
+          user_id: batch.userId,
+          session_id: batch.sessionId,
+          image_count: batch.progress.total,
+          status: batch.status,
+          csv_filename: batch.csvFileName ?? null,
+        })
+      )
+        .then(({ error }: { error: { message: string } | null }) => {
+          if (error) {
+            logger.warn(
+              { batchId: batch.batchId, error: error.message },
+              'Failed to persist batch to Supabase — continuing without'
+            );
+          } else {
+            logger.info({ batchId: batch.batchId }, 'Batch persisted to Supabase');
+          }
+        })
+        .catch((error: unknown) => {
+          logger.warn(
+            { batchId: batch.batchId, error: error instanceof Error ? error.message : 'Unknown' },
+            'Supabase persistence error — continuing without'
+          );
+        });
     }
   }
 

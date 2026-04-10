@@ -340,4 +340,43 @@ describe('BatchPersistenceService', () => {
       expect(() => service.close()).not.toThrow();
     });
   });
+
+  describe('Story 6.8: updateCsvInfo()', () => {
+    it('should update csv_path and csv_filename for existing batch', () => {
+      // Persist batch without CSV info (simulates completeBatch before CSV generation)
+      const batch = createTestBatch({
+        batchId: 'csv-update-1',
+        csvPath: undefined,
+        csvFileName: undefined,
+      });
+      service.persistBatch(batch);
+
+      // Verify null initially
+      const before = service.getBatchById('csv-update-1');
+      expect(before!.csv_path).toBeNull();
+      expect(before!.csv_filename).toBeNull();
+
+      // Update CSV info (simulates associateCsv after CSV generation)
+      service.updateCsvInfo('csv-update-1', 'csv_output/test-metadata.csv', 'test-metadata.csv');
+
+      // Verify updated
+      const after = service.getBatchById('csv-update-1');
+      expect(after!.csv_path).toBe('csv_output/test-metadata.csv');
+      expect(after!.csv_filename).toBe('test-metadata.csv');
+    });
+
+    it('should not throw for nonexistent batch', () => {
+      expect(() => {
+        service.updateCsvInfo('nonexistent-batch', 'csv_output/x.csv', 'x.csv');
+      }).not.toThrow();
+    });
+
+    it('should not throw when service is not initialized', () => {
+      const uninitService = new BatchPersistenceService();
+      // Don't call initialize — db is null
+      expect(() => {
+        uninitService.updateCsvInfo('any-batch', 'csv_output/x.csv', 'x.csv');
+      }).not.toThrow();
+    });
+  });
 });

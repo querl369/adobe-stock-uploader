@@ -20,6 +20,8 @@ import { recordCsvDownload } from '../../utils/metrics';
 import { services } from '../../config/container';
 import { CSV_OUTPUT_DIR } from '../../services/csv-export.service';
 import { batchTrackingService } from '../../services/batch-tracking.service';
+import { extractUserId } from '../middleware/auth.middleware';
+import { supabaseAdmin } from '../../lib/supabase';
 import type { Metadata } from '../../models/metadata.model';
 
 /**
@@ -176,12 +178,30 @@ router.get(
     }
 
     // AC2: Session ownership check — return 404 (not 403) to prevent enumeration
+    // Story 6.8: If session mismatch, try auth-based ownership as fallback
     if (batchSessionId !== sessionId) {
-      logger.warn(
-        { batchId, requestSessionId: sessionId, ownerSessionId: batchSessionId },
-        'Unauthorized download attempt: session mismatch'
-      );
-      throw new NotFoundError('Batch not found');
+      let authOwned = false;
+
+      const userId = await extractUserId(req);
+      if (userId && supabaseAdmin) {
+        const { data } = await supabaseAdmin
+          .from('processing_batches')
+          .select('user_id')
+          .eq('id', batchId)
+          .single();
+
+        if (data && data.user_id === userId) {
+          authOwned = true;
+        }
+      }
+
+      if (!authOwned) {
+        logger.warn(
+          { batchId, requestSessionId: sessionId, ownerSessionId: batchSessionId },
+          'Unauthorized download attempt: session mismatch'
+        );
+        throw new NotFoundError('Batch not found');
+      }
     }
 
     // AC3: Batch must have an associated CSV file

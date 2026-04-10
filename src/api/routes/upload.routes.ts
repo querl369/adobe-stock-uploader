@@ -27,6 +27,7 @@ import {
   sessionUploadLimitMiddleware,
 } from '../middleware/rate-limit.middleware';
 import { sessionService } from '../../services/session.service';
+import { extractUserId } from '../middleware/auth.middleware';
 
 const router: Router = express.Router();
 
@@ -147,31 +148,38 @@ router.post(
         }
 
         // Story 2.1 AC3 & Story 2.3: Enforce session-based rate limit
-        // Check if adding these files would exceed the limit
-        const currentUsage = sessionService.getSessionUsage(sessionId);
-        const remaining = sessionService.getRemainingImages(sessionId);
+        // Story 6.8: Authenticated users bypass anonymous session limit
+        const userId = await extractUserId(req);
+        const isAuthenticated = userId !== null;
 
-        if (files.length > remaining) {
-          // Clean up uploaded files before throwing error
-          files.forEach(file => {
-            if (fs.existsSync(file.path)) {
-              fs.unlinkSync(file.path);
-            }
-          });
+        if (!isAuthenticated) {
+          // Check if adding these files would exceed the anonymous limit
+          const currentUsage = sessionService.getSessionUsage(sessionId);
+          const remaining = sessionService.getRemainingImages(sessionId);
 
-          throw new RateLimitError(
-            `Upload would exceed anonymous limit. You have ${remaining} of 10 free images remaining. ` +
-              `You tried to upload ${files.length} images. Please create an account for higher limits.`,
-            3600 // 1 hour retry
-          );
+          if (files.length > remaining) {
+            // Clean up uploaded files before throwing error
+            files.forEach(file => {
+              if (fs.existsSync(file.path)) {
+                fs.unlinkSync(file.path);
+              }
+            });
+
+            throw new RateLimitError(
+              `Upload would exceed anonymous limit. You have ${remaining} of 10 free images remaining. ` +
+                `You tried to upload ${files.length} images. Please create an account for higher limits.`,
+              3600 // 1 hour retry
+            );
+          }
         }
 
+        const currentUsage = sessionService.getSessionUsage(sessionId);
         req.log.info(
           {
             fileCount: files.length,
             sessionId,
             currentUsage,
-            remaining,
+            authenticated: isAuthenticated,
           },
           'Batch upload started'
         );

@@ -32,6 +32,11 @@ vi.mock('../src/utils/logger', () => ({
   },
 }));
 
+// Story 6.8: Mock supabase admin client
+vi.mock('../src/lib/supabase', () => ({
+  supabaseAdmin: null,
+}));
+
 // Use fresh import for each test
 let batchTrackingService: any;
 
@@ -833,6 +838,261 @@ describe('BatchTrackingService - Story 2.6', () => {
           status: 'failed',
         })
       );
+    });
+
+    it('should call updateCsvInfo on associateCsv when persistence service is set', () => {
+      const mockPersistenceService = {
+        persistBatch: vi.fn(),
+        updateCsvInfo: vi.fn(),
+        isAvailable: true,
+      };
+      batchTrackingService.setPersistenceService(mockPersistenceService);
+
+      const batch = batchTrackingService.createBatch({
+        sessionId: 'session-csv',
+        files: [{ id: 'file-1', filename: 'image1.jpg' }],
+      });
+
+      batchTrackingService.associateCsv(batch.batchId, 'csv_output/test.csv', 'test.csv');
+
+      expect(mockPersistenceService.updateCsvInfo).toHaveBeenCalledWith(
+        batch.batchId,
+        'csv_output/test.csv',
+        'test.csv'
+      );
+    });
+  });
+
+  describe('Story 6.8: Progress Double-Counting Prevention', () => {
+    it('should not inflate progress when updateBatchProgress and updateImageResult are both called', () => {
+      const batch = batchTrackingService.createBatch({
+        sessionId: 'session-123',
+        files: [
+          { id: 'file-1', filename: 'image1.jpg' },
+          { id: 'file-2', filename: 'image2.jpg' },
+          { id: 'file-3', filename: 'image3.jpg' },
+          { id: 'file-4', filename: 'image4.jpg' },
+          { id: 'file-5', filename: 'image5.jpg' },
+        ],
+      });
+
+      batchTrackingService.startBatch(batch.batchId);
+
+      // Simulate onProgress callback: set absolute counts, then update image results
+      // This is exactly what batch.routes.ts does in the onProgress callback
+
+      // After first image succeeds:
+      batchTrackingService.updateBatchProgress(batch.batchId, 1, 1, 0, 4);
+      batchTrackingService.updateImageResult(batch.batchId, 'image1.jpg', {
+        success: true,
+        filename: 'image1.jpg',
+        metadata: { filename: 'image1.jpg', title: 'T', keywords: 'k', category: 1 },
+      });
+
+      let updated = batchTrackingService.getBatch(batch.batchId);
+      // Progress should reflect absolute counts from updateBatchProgress, not be inflated
+      expect(updated!.progress.completed).toBe(1);
+      expect(updated!.progress.failed).toBe(0);
+
+      // After second image fails:
+      batchTrackingService.updateBatchProgress(batch.batchId, 2, 1, 1, 3);
+      batchTrackingService.updateImageResult(batch.batchId, 'image1.jpg', {
+        success: true,
+        filename: 'image1.jpg',
+        metadata: { filename: 'image1.jpg', title: 'T', keywords: 'k', category: 1 },
+      });
+      batchTrackingService.updateImageResult(batch.batchId, 'image2.jpg', {
+        success: false,
+        filename: 'image2.jpg',
+        error: { message: 'API timeout', code: 'TIMEOUT' },
+      });
+
+      updated = batchTrackingService.getBatch(batch.batchId);
+      expect(updated!.progress.completed).toBe(2);
+      expect(updated!.progress.failed).toBe(1);
+    });
+
+    it('should show correct final counts with 4 failures and 1 success', () => {
+      const batch = batchTrackingService.createBatch({
+        sessionId: 'session-123',
+        files: [
+          { id: 'f1', filename: 'img1.jpg' },
+          { id: 'f2', filename: 'img2.jpg' },
+          { id: 'f3', filename: 'img3.jpg' },
+          { id: 'f4', filename: 'img4.jpg' },
+          { id: 'f5', filename: 'img5.jpg' },
+        ],
+      });
+
+      batchTrackingService.startBatch(batch.batchId);
+
+      const successResult = (fn: string) => ({
+        success: true,
+        filename: fn,
+        metadata: { filename: fn, title: 'T', keywords: 'k', category: 1 },
+      });
+      const failResult = (fn: string) => ({
+        success: false,
+        filename: fn,
+        error: { message: 'Failed', code: 'ERR' },
+      });
+
+      // Simulate the full onProgress sequence for 5 images (1 success, 4 failures)
+      // Each callback includes ALL accumulated results
+
+      // Callback 1: img2 succeeds
+      batchTrackingService.updateBatchProgress(batch.batchId, 1, 1, 0, 4);
+      batchTrackingService.updateImageResult(batch.batchId, 'img2.jpg', successResult('img2.jpg'));
+
+      // Callback 2: img1 fails
+      batchTrackingService.updateBatchProgress(batch.batchId, 2, 1, 1, 3);
+      batchTrackingService.updateImageResult(batch.batchId, 'img2.jpg', successResult('img2.jpg'));
+      batchTrackingService.updateImageResult(batch.batchId, 'img1.jpg', failResult('img1.jpg'));
+
+      // Callback 3: img3 fails
+      batchTrackingService.updateBatchProgress(batch.batchId, 3, 1, 2, 2);
+      batchTrackingService.updateImageResult(batch.batchId, 'img3.jpg', failResult('img3.jpg'));
+
+      // Callback 4: img4 fails
+      batchTrackingService.updateBatchProgress(batch.batchId, 4, 1, 3, 1);
+      batchTrackingService.updateImageResult(batch.batchId, 'img4.jpg', failResult('img4.jpg'));
+
+      // Callback 5: img5 fails — triggers completeBatch
+      batchTrackingService.updateBatchProgress(batch.batchId, 5, 1, 4, 0);
+      batchTrackingService.updateImageResult(batch.batchId, 'img5.jpg', failResult('img5.jpg'));
+
+      const final = batchTrackingService.getBatch(batch.batchId);
+
+      // CRITICAL: batch should be 'completed' (not 'failed') because 1 image succeeded
+      expect(final!.status).toBe('completed');
+      expect(final!.progress.failed).toBe(4);
+      expect(final!.progress.completed).toBe(5); // 4 failed + 1 success = 5 done
+      expect(final!.progress.total).toBe(5);
+    });
+
+    it('should correctly mark batch as failed only when ALL images fail', () => {
+      const batch = batchTrackingService.createBatch({
+        sessionId: 'session-123',
+        files: [
+          { id: 'f1', filename: 'img1.jpg' },
+          { id: 'f2', filename: 'img2.jpg' },
+        ],
+      });
+
+      batchTrackingService.startBatch(batch.batchId);
+
+      const failResult = (fn: string) => ({
+        success: false,
+        filename: fn,
+        error: { message: 'Failed', code: 'ERR' },
+      });
+
+      batchTrackingService.updateBatchProgress(batch.batchId, 1, 0, 1, 1);
+      batchTrackingService.updateImageResult(batch.batchId, 'img1.jpg', failResult('img1.jpg'));
+
+      batchTrackingService.updateBatchProgress(batch.batchId, 2, 0, 2, 0);
+      batchTrackingService.updateImageResult(batch.batchId, 'img2.jpg', failResult('img2.jpg'));
+
+      const final = batchTrackingService.getBatch(batch.batchId);
+      expect(final!.status).toBe('failed');
+      expect(final!.progress.failed).toBe(2);
+    });
+  });
+
+  describe('Story 6.8: completeBatch Guard', () => {
+    it('should not run completeBatch twice', () => {
+      const mockPersistenceService = {
+        persistBatch: vi.fn(),
+        isAvailable: true,
+      };
+      batchTrackingService.setPersistenceService(mockPersistenceService);
+
+      const batch = batchTrackingService.createBatch({
+        sessionId: 'session-123',
+        files: [{ id: 'f1', filename: 'img1.jpg' }],
+      });
+
+      batchTrackingService.startBatch(batch.batchId);
+
+      // First completion via updateImageResult
+      batchTrackingService.updateImageResult(batch.batchId, 'img1.jpg', {
+        success: true,
+        filename: 'img1.jpg',
+        metadata: { filename: 'img1.jpg', title: 'T', keywords: 'k', category: 1 },
+      });
+
+      // Second call (simulating final loop calling updateImageResult again)
+      batchTrackingService.updateImageResult(batch.batchId, 'img1.jpg', {
+        success: true,
+        filename: 'img1.jpg',
+        metadata: { filename: 'img1.jpg', title: 'T', keywords: 'k', category: 1 },
+      });
+
+      // persistBatch should only be called once (guard prevents second completeBatch)
+      expect(mockPersistenceService.persistBatch).toHaveBeenCalledTimes(1);
+    });
+
+    it('should preserve correct status after guard prevents re-completion', () => {
+      const batch = batchTrackingService.createBatch({
+        sessionId: 'session-123',
+        files: [
+          { id: 'f1', filename: 'img1.jpg' },
+          { id: 'f2', filename: 'img2.jpg' },
+        ],
+      });
+
+      batchTrackingService.startBatch(batch.batchId);
+
+      // Complete both images
+      batchTrackingService.updateImageResult(batch.batchId, 'img1.jpg', {
+        success: true,
+        filename: 'img1.jpg',
+        metadata: { filename: 'img1.jpg', title: 'T', keywords: 'k', category: 1 },
+      });
+      batchTrackingService.updateImageResult(batch.batchId, 'img2.jpg', {
+        success: false,
+        filename: 'img2.jpg',
+        error: { message: 'Failed', code: 'ERR' },
+      });
+
+      const first = batchTrackingService.getBatch(batch.batchId);
+      expect(first!.status).toBe('completed');
+      const firstCompletedAt = first!.completedAt;
+
+      // Re-call updateImageResult (simulates final loop)
+      batchTrackingService.updateImageResult(batch.batchId, 'img1.jpg', {
+        success: true,
+        filename: 'img1.jpg',
+        metadata: { filename: 'img1.jpg', title: 'T', keywords: 'k', category: 1 },
+      });
+
+      const second = batchTrackingService.getBatch(batch.batchId);
+      // Status and completedAt should not change
+      expect(second!.status).toBe('completed');
+      expect(second!.completedAt).toEqual(firstCompletedAt);
+    });
+  });
+
+  describe('Story 6.8: userId Tracking', () => {
+    it('should store userId when provided to createBatch', () => {
+      const batch = batchTrackingService.createBatch({
+        sessionId: 'session-123',
+        userId: 'user-abc-456',
+        files: [{ id: 'f1', filename: 'img1.jpg' }],
+      });
+
+      expect(batch.userId).toBe('user-abc-456');
+      const retrieved = batchTrackingService.getBatch(batch.batchId);
+      expect(retrieved!.userId).toBe('user-abc-456');
+    });
+
+    it('should leave userId undefined for anonymous users', () => {
+      const batch = batchTrackingService.createBatch({
+        sessionId: 'session-123',
+        files: [{ id: 'f1', filename: 'img1.jpg' }],
+      });
+
+      expect(batch.userId).toBeUndefined();
     });
   });
 });

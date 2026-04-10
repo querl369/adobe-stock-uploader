@@ -108,6 +108,31 @@ vi.mock('../src/utils/metrics', () => ({
   recordCsvExport: vi.fn(),
 }));
 
+// Story 6.8: Configurable supabase admin mock for auth fallback tests
+const { mockSupabaseSelect, mockSupabaseAdmin } = vi.hoisted(() => {
+  const mockSupabaseSelect = vi.fn();
+  const mockSupabaseAdmin = {
+    from: vi.fn().mockReturnValue({
+      select: mockSupabaseSelect,
+    }),
+    auth: { getUser: vi.fn() },
+  };
+  return { mockSupabaseSelect, mockSupabaseAdmin };
+});
+
+let supabaseAdminValue: unknown = null;
+vi.mock('../src/lib/supabase', () => ({
+  get supabaseAdmin() {
+    return supabaseAdminValue;
+  },
+}));
+
+// Story 6.8: Configurable extractUserId mock
+const mockExtractUserId = vi.fn().mockResolvedValue(null);
+vi.mock('../src/api/middleware/auth.middleware', () => ({
+  extractUserId: (...args: any[]) => mockExtractUserId(...args),
+}));
+
 // Mock session service (needed by session middleware)
 vi.mock('../src/services/session.service', () => ({
   sessionService: {
@@ -148,6 +173,8 @@ describe('CSV Download Route - GET /api/download-csv/:batchId', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    supabaseAdminValue = null;
+    mockExtractUserId.mockResolvedValue(null);
     app = express();
     app.use(express.json());
     app.use('/api', csvRoutes);
@@ -480,6 +507,112 @@ describe('CSV Download Route - GET /api/download-csv/:batchId', () => {
       expect(response.body.error.message).toBe('Batch not found');
 
       mockPersistenceService.isAvailable = false;
+    });
+  });
+
+  describe('Story 6.8: Auth-Based Ownership Fallback', () => {
+    beforeEach(() => {
+      // Create a real temp CSV file for download tests
+      if (!fs.existsSync(TEST_CSV_DIR)) {
+        fs.mkdirSync(TEST_CSV_DIR, { recursive: true });
+      }
+      fs.writeFileSync(TEST_CSV_PATH, 'Filename,Title,Keywords,Category\ntest.jpg,Test,test,1\n');
+    });
+
+    afterEach(() => {
+      if (fs.existsSync(TEST_CSV_PATH)) {
+        fs.unlinkSync(TEST_CSV_PATH);
+      }
+      mockPersistenceService.isAvailable = false;
+    });
+
+    it('should allow download when auth user owns the batch via Supabase', async () => {
+      // Batch exists in SQLite but belongs to a DIFFERENT session
+      mockGetBatch.mockReturnValue(null);
+      mockPersistenceService.isAvailable = true;
+      mockPersistenceGetBatchById.mockReturnValue({
+        batch_id: VALID_BATCH_ID,
+        session_id: 'other-session-999', // different from mockSessionId
+        csv_path: `csv_output/${TEST_CSV_FILENAME}`,
+        csv_filename: TEST_CSV_FILENAME,
+        expires_at: new Date(Date.now() + 86400000).toISOString(),
+      });
+
+      // Auth fallback: extractUserId returns a valid user
+      mockExtractUserId.mockResolvedValue('user-abc-123');
+
+      // Supabase returns matching ownership
+      supabaseAdminValue = mockSupabaseAdmin;
+      mockSupabaseSelect.mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          single: vi.fn().mockResolvedValue({
+            data: { user_id: 'user-abc-123' },
+            error: null,
+          }),
+        }),
+      });
+
+      const response = await request(app).get(`/api/download-csv/${VALID_BATCH_ID}`).expect(200);
+
+      expect(response.headers['content-type']).toMatch(/text\/csv/);
+    });
+
+    it('should return 404 when auth user does NOT own the batch', async () => {
+      // Batch exists but belongs to different session
+      mockGetBatch.mockReturnValue(null);
+      mockPersistenceService.isAvailable = true;
+      mockPersistenceGetBatchById.mockReturnValue({
+        batch_id: VALID_BATCH_ID,
+        session_id: 'other-session-999',
+        csv_path: `csv_output/${TEST_CSV_FILENAME}`,
+        csv_filename: TEST_CSV_FILENAME,
+        expires_at: new Date(Date.now() + 86400000).toISOString(),
+      });
+
+      // Auth fallback: user is authenticated but doesn't own this batch
+      mockExtractUserId.mockResolvedValue('user-wrong-456');
+      supabaseAdminValue = mockSupabaseAdmin;
+      mockSupabaseSelect.mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          single: vi.fn().mockResolvedValue({
+            data: { user_id: 'user-abc-123' }, // different from extractUserId result
+            error: null,
+          }),
+        }),
+      });
+
+      const response = await request(app).get(`/api/download-csv/${VALID_BATCH_ID}`).expect(404);
+      expect(response.body.error.message).toBe('Batch not found');
+    });
+
+    it('should return 404 when no auth token and session mismatch', async () => {
+      // Batch exists but different session, no auth token
+      mockGetBatch.mockReturnValue(null);
+      mockPersistenceService.isAvailable = true;
+      mockPersistenceGetBatchById.mockReturnValue({
+        batch_id: VALID_BATCH_ID,
+        session_id: 'other-session-999',
+        csv_path: `csv_output/${TEST_CSV_FILENAME}`,
+        csv_filename: TEST_CSV_FILENAME,
+        expires_at: new Date(Date.now() + 86400000).toISOString(),
+      });
+
+      // No auth token — extractUserId returns null
+      mockExtractUserId.mockResolvedValue(null);
+
+      const response = await request(app).get(`/api/download-csv/${VALID_BATCH_ID}`).expect(404);
+      expect(response.body.error.message).toBe('Batch not found');
+    });
+
+    it('should still use session-based check first (auth is fallback only)', async () => {
+      // Batch matches current session — should succeed without auth check
+      const batch = createMockBatch();
+      mockGetBatch.mockReturnValue(batch);
+
+      const response = await request(app).get(`/api/download-csv/${VALID_BATCH_ID}`).expect(200);
+
+      // extractUserId should NOT have been called (session matched)
+      expect(mockExtractUserId).not.toHaveBeenCalled();
     });
   });
 });

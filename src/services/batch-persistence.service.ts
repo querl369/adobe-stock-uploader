@@ -115,7 +115,7 @@ export class BatchPersistenceService {
     stmt.run(
       batch.batchId,
       batch.sessionId,
-      null, // user_id: null for anonymous users
+      batch.userId ?? null,
       batch.progress.total,
       batch.progress.completed - batch.progress.failed, // successful only (completed includes both)
       batch.progress.failed,
@@ -199,6 +199,19 @@ export class BatchPersistenceService {
     const stmt = this.db.prepare('DELETE FROM processing_batches WHERE expires_at < ?');
     const result = stmt.run(now);
     return result.changes;
+  }
+
+  /**
+   * Update CSV info for a persisted batch.
+   * Called when CSV is generated after batch completion.
+   */
+  updateCsvInfo(batchId: string, csvPath: string, csvFileName: string): void {
+    if (!this.db) return;
+
+    const stmt = this.db.prepare(
+      'UPDATE processing_batches SET csv_path = ?, csv_filename = ? WHERE batch_id = ?'
+    );
+    stmt.run(csvPath, csvFileName, batchId);
   }
 
   /** Whether the service initialized successfully */

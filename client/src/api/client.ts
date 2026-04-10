@@ -1,9 +1,32 @@
+import { supabase } from '../lib/supabase';
 import type {
   UploadResponse,
   BatchStartResponse,
   BatchStatusResponse,
   BatchHistoryResponse,
 } from '../types';
+
+/**
+ * Get the current Supabase access token for authenticated API requests.
+ * Returns null for anonymous users or when Supabase is unavailable.
+ */
+async function getAuthToken(): Promise<string | null> {
+  if (!supabase) return null;
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}
+
+/**
+ * Build headers with optional Authorization token.
+ */
+async function authHeaders(extra: Record<string, string> = {}): Promise<Record<string, string>> {
+  const token = await getAuthToken();
+  const headers: Record<string, string> = { ...extra };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
 
 export class ApiError extends Error {
   constructor(
@@ -56,8 +79,10 @@ export async function uploadImages(files: File[]): Promise<UploadResponse> {
     formData.append('images', file);
   });
 
+  // Don't set Content-Type — browser sets it with boundary for multipart/form-data
   const response = await safeFetch('/api/upload-images', {
     method: 'POST',
+    headers: await authHeaders(),
     body: formData,
   });
 
@@ -67,7 +92,7 @@ export async function uploadImages(files: File[]): Promise<UploadResponse> {
 export async function startBatchProcessing(fileIds: string[]): Promise<BatchStartResponse> {
   const response = await safeFetch('/api/process-batch-v2', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ fileIds }),
   });
 
@@ -86,6 +111,31 @@ export async function cleanup(): Promise<void> {
   }
 }
 
+/**
+ * Persist CSV to server so it can be re-downloaded from History.
+ * Fire-and-forget — failure is non-fatal.
+ * Includes initials in each record's "releases" field so re-downloads match the original CSV.
+ */
+export async function persistCsvToServer(
+  metadataList: Array<{ filename: string; title: string; keywords: string; category: number }>,
+  batchId: string,
+  initials: string
+): Promise<void> {
+  try {
+    const metadataWithReleases = metadataList.map(item => ({
+      ...item,
+      releases: initials,
+    }));
+    await safeFetch('/api/generate-csv', {
+      method: 'POST',
+      headers: await authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ metadataList: metadataWithReleases, batchId }),
+    });
+  } catch {
+    // Non-fatal — user already has the client-side download
+  }
+}
+
 export async function getBatches(options?: {
   signal?: AbortSignal;
 }): Promise<BatchHistoryResponse> {
@@ -94,7 +144,10 @@ export async function getBatches(options?: {
 }
 
 export async function downloadBatchCsv(batchId: string): Promise<void> {
-  const response = await safeFetch(`/api/download-csv/${batchId}`);
+  const response = await safeFetch(`/api/download-csv/${batchId}`, {
+    headers: await authHeaders(),
+    credentials: 'include',
+  });
   if (!response.ok) {
     await categorizeHttpError(response, 'Download failed');
   }

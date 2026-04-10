@@ -56,6 +56,11 @@ vi.mock('../src/utils/logger', () => ({
   },
 }));
 
+// Story 6.8: Mock supabase admin client (auth.middleware.ts + csv.routes.ts dependency)
+vi.mock('../src/lib/supabase', () => ({
+  supabaseAdmin: null,
+}));
+
 describe('CSV Routes - POST /api/generate-csv', () => {
   let app: express.Express;
   let csvRoutes: any;

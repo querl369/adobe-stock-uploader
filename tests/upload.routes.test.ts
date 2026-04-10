@@ -22,6 +22,11 @@ vi.mock('../src/config/app.config', () => ({
   },
 }));
 
+// Story 6.8: Mock supabase admin client (auth.middleware.ts dependency)
+vi.mock('../src/lib/supabase', () => ({
+  supabaseAdmin: null,
+}));
+
 describe('Upload Routes - Story 2.1', () => {
   let app: Express;
   let uploadRoutes: any;

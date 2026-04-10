@@ -129,6 +129,12 @@ export interface BatchState {
   updatedAt: Date;
 
   /**
+   * Authenticated user ID (Supabase UUID) — set when request includes valid JWT
+   * Story 6.8: Used for Supabase persistence and auth-based CSV re-download
+   */
+  userId?: string;
+
+  /**
    * Timestamp when batch completed (success or failure)
    */
   completedAt?: Date;
@@ -214,4 +220,10 @@ export interface CreateBatchOptions {
     id: string;
     filename: string;
   }>;
+
+  /**
+   * Authenticated user ID (optional — absent for anonymous users)
+   * Story 6.8: Passed through to BatchState for Supabase persistence
+   */
+  userId?: string;
 }

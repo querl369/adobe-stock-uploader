@@ -9,7 +9,13 @@ import { ProcessingView } from '../components/ProcessingView';
 import { ResultsView } from '../components/ResultsView';
 import { DropZone } from '../components/DropZone';
 import { toast } from 'sonner';
-import { uploadImages, startBatchProcessing, getBatchStatus, cleanup } from '../api/client';
+import {
+  uploadImages,
+  startBatchProcessing,
+  getBatchStatus,
+  cleanup,
+  persistCsvToServer,
+} from '../api/client';
 import { generateCSV, downloadCSV } from '../utils/csv';
 import { validateFiles } from '../utils/validation';
 import type { ValidationError } from '../utils/validation';
@@ -144,6 +150,9 @@ export function Home() {
           if (csvData.length > 0) {
             downloadCSV(generateCSV(csvData, initials), `${initials}_${Date.now()}.csv`);
             toast.success('CSV downloaded!');
+
+            // Persist CSV server-side for History re-download (fire-and-forget)
+            persistCsvToServer(csvData, batchId, initials);
           }
 
           setProcessingDuration(Math.round((Date.now() - startTime) / 1000));

@@ -19,6 +19,7 @@ import { sessionMiddleware, SessionRequest } from '../middleware/session.middlew
 import { batchTrackingService } from '../../services/batch-tracking.service';
 import { CSV_OUTPUT_DIR } from '../../services/csv-export.service';
 import { services } from '../../config/container';
+import { extractUserId } from '../middleware/auth.middleware';
 import type { ProcessBatchRequest } from '../../models/batch.model';
 import type { BatchRow } from '../../services/batch-persistence.service';
 
@@ -124,7 +125,13 @@ router.post(
       throw new ValidationError('Maximum 10 files can be processed at once');
     }
 
-    req.log.info({ fileIds: fileIds.length, sessionId }, 'Starting batch processing');
+    // Story 6.8: Extract authenticated user ID (null for anonymous users)
+    const userId = await extractUserId(req);
+
+    req.log.info(
+      { fileIds: fileIds.length, sessionId, userId: userId ?? 'anonymous' },
+      'Starting batch processing'
+    );
 
     // Validate files exist and build file list
     const files: Array<{ id: string; filename: string; path: string }> = [];
@@ -160,6 +167,7 @@ router.post(
     const batch = batchTrackingService.createBatch({
       sessionId,
       files: files.map(f => ({ id: f.id, filename: f.filename })),
+      userId: userId ?? undefined,
     });
 
     req.log.info({ batchId: batch.batchId, fileCount: files.length }, 'Batch created');
