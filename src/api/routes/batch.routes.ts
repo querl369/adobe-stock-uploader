@@ -12,7 +12,12 @@ import path from 'path';
 import fs from 'fs';
 import { asyncHandler } from '../middleware/error-handler';
 import { ipRateLimitMiddleware } from '../middleware/rate-limit.middleware';
-import { ValidationError, NotFoundError } from '../../models/errors';
+import {
+  ValidationError,
+  NotFoundError,
+  RateLimitError,
+  AuthenticationError,
+} from '../../models/errors';
 import { logger } from '../../utils/logger';
 import { config } from '../../config/app.config';
 import { sessionMiddleware, SessionRequest } from '../middleware/session.middleware';
@@ -125,13 +130,23 @@ router.post(
       throw new ValidationError('Maximum 10 files can be processed at once');
     }
 
-    // Story 6.8: Extract authenticated user ID (null for anonymous users)
+    // Story 6.9: Auth is required for batch processing
     const userId = await extractUserId(req);
+    if (!userId) {
+      throw new AuthenticationError('Sign up or log in to generate metadata');
+    }
 
-    req.log.info(
-      { fileIds: fileIds.length, sessionId, userId: userId ?? 'anonymous' },
-      'Starting batch processing'
-    );
+    // Story 6.9: Quota enforcement — check before processing
+    const quota = await services.usageTracking.checkQuota(userId, fileIds.length);
+    if (!quota.allowed) {
+      throw new RateLimitError(
+        `You've used all ${quota.limit} free images this month. Try again next month.`,
+        undefined,
+        { used: quota.used, limit: quota.limit, remaining: quota.remaining }
+      );
+    }
+
+    req.log.info({ fileIds: fileIds.length, sessionId, userId }, 'Starting batch processing');
 
     // Validate files exist and build file list
     const files: Array<{ id: string; filename: string; path: string }> = [];
@@ -167,7 +182,7 @@ router.post(
     const batch = batchTrackingService.createBatch({
       sessionId,
       files: files.map(f => ({ id: f.id, filename: f.filename })),
-      userId: userId ?? undefined,
+      userId,
     });
 
     req.log.info({ batchId: batch.batchId, fileCount: files.length }, 'Batch created');

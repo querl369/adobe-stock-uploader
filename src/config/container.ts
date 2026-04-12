@@ -21,6 +21,7 @@ import { CsvExportService } from '@/services/csv-export.service';
 import { CategoryService } from '@/services/category.service';
 import { MetadataValidationService } from '@/services/metadata-validation.service';
 import { BatchPersistenceService } from '@/services/batch-persistence.service';
+import { UsageTrackingService } from '@/services/usage-tracking.service';
 import { logger } from '@/utils/logger';
 
 /**
@@ -65,6 +66,12 @@ export interface ServiceContainer {
    * Story 4.3: Batch History Persistence
    */
   batchPersistence: BatchPersistenceService;
+
+  /**
+   * Usage tracking service for monthly quota enforcement
+   * Story 6.9: Monthly Usage Tracking & Quota Enforcement
+   */
+  usageTracking: UsageTrackingService;
 }
 
 /**
@@ -107,6 +114,9 @@ class Container {
     const batchPersistenceService = new BatchPersistenceService();
     batchPersistenceService.initialize();
 
+    // Step 0b: Initialize usage tracking (no dependencies, Story 6.9)
+    const usageTrackingService = new UsageTrackingService();
+
     // Step 1: Initialize services with no dependencies
     const tempUrlService = new TempUrlService();
     const categoryService = new CategoryService();
@@ -129,6 +139,7 @@ class Container {
       category: categoryService,
       metadataValidation: metadataValidationService,
       batchPersistence: batchPersistenceService,
+      usageTracking: usageTrackingService,
     };
   }
 

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
+import { Link } from 'react-router';
 import { Loader2 } from 'lucide-react';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -15,13 +16,16 @@ import {
   getBatchStatus,
   cleanup,
   persistCsvToServer,
+  getUsage,
 } from '../api/client';
 import { generateCSV, downloadCSV } from '../utils/csv';
 import { validateFiles } from '../utils/validation';
+import { useAuth } from '../contexts/AuthContext';
 import type { ValidationError } from '../utils/validation';
-import type { UploadedImage, AppView, BatchStatusResponse } from '../types';
+import type { UploadedImage, AppView, BatchStatusResponse, UsageResponse } from '../types';
 
 export function Home() {
+  const { user } = useAuth();
   const [images, setImages] = useState<UploadedImage[]>([]);
   const [initials, setInitials] = useState('');
   const [isDragging, setIsDragging] = useState(false);
@@ -31,8 +35,12 @@ export function Home() {
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
   const [processingDuration, setProcessingDuration] = useState<number | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [usage, setUsage] = useState<UsageResponse | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const validationTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
+
+  const showPlansLink = import.meta.env.VITE_FEATURE_PLANS_PAGE === 'true';
+  const quotaExceeded = usage !== null && usage.remaining <= 0;
 
   useEffect(() => {
     cleanup().catch(error => console.error('Error during initial cleanup:', error));
@@ -41,6 +49,17 @@ export function Home() {
       if (validationTimerRef.current) clearTimeout(validationTimerRef.current);
     };
   }, []);
+
+  // Fetch usage when authenticated
+  useEffect(() => {
+    if (user) {
+      getUsage()
+        .then(setUsage)
+        .catch(() => setUsage(null));
+    } else {
+      setUsage(null);
+    }
+  }, [user]);
 
   const handleFileSelect = async (files: File[]) => {
     if (isUploading) return;
@@ -153,6 +172,13 @@ export function Home() {
 
             // Persist CSV server-side for History re-download (fire-and-forget)
             persistCsvToServer(csvData, batchId, initials);
+          }
+
+          // Refetch usage after batch completes
+          if (user) {
+            getUsage()
+              .then(setUsage)
+              .catch(() => {});
           }
 
           setProcessingDuration(Math.round((Date.now() - startTime) / 1000));
@@ -321,25 +347,58 @@ export function Home() {
                   />
                 </div>
 
+                {/* Usage display for authenticated users */}
+                {user && usage && !quotaExceeded && (
+                  <p className="text-sm text-muted-foreground text-center">
+                    {usage.used} of {usage.monthlyLimit} images used this month
+                  </p>
+                )}
+
+                {/* Quota exceeded message */}
+                {user && quotaExceeded && (
+                  <div className="text-center space-y-1">
+                    <p className="text-sm text-destructive">
+                      You've used all {usage!.monthlyLimit} free images this month. Try again next
+                      month.
+                    </p>
+                    {showPlansLink && (
+                      <Link to="/plans" className="text-sm underline opacity-60 hover:opacity-100">
+                        See our plans for more images
+                      </Link>
+                    )}
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-3">
-                  <button
-                    onClick={handleGenerateMetadata}
-                    disabled={images.length === 0 || isProcessing}
-                    className="grain-gradient px-6 py-4 bg-gradient-to-b from-[#1a1a1a] to-[#0a0a0a] text-primary-foreground rounded-2xl transition-all duration-300 hover:scale-[1.01] hover:shadow-2xl active:scale-[0.99] disabled:opacity-20 disabled:cursor-not-allowed disabled:hover:scale-100 tracking-[-0.01em] text-[0.95rem] relative overflow-hidden group"
-                  >
-                    <span className="relative z-10 flex items-center gap-2">
-                      {isProcessing ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Processing...
-                        </>
-                      ) : (
-                        'Generate & Export CSV'
-                      )}
-                    </span>
-                    <div className="absolute inset-0 bg-gradient-to-t from-transparent via-white/5 to-white/10 rounded-2xl pointer-events-none" />
-                    <div className="absolute inset-0 bg-white/0 group-hover:bg-white/5 rounded-2xl transition-all duration-300 pointer-events-none" />
-                  </button>
+                  {!user ? (
+                    <Link
+                      to="/signup"
+                      className="grain-gradient px-6 py-4 bg-gradient-to-b from-[#1a1a1a] to-[#0a0a0a] text-primary-foreground rounded-2xl transition-all duration-300 hover:scale-[1.01] hover:shadow-2xl active:scale-[0.99] tracking-[-0.01em] text-[0.95rem] relative overflow-hidden group text-center"
+                    >
+                      <span className="relative z-10">Sign Up to Generate</span>
+                      <div className="absolute inset-0 bg-gradient-to-t from-transparent via-white/5 to-white/10 rounded-2xl pointer-events-none" />
+                      <div className="absolute inset-0 bg-white/0 group-hover:bg-white/5 rounded-2xl transition-all duration-300 pointer-events-none" />
+                    </Link>
+                  ) : (
+                    <button
+                      onClick={handleGenerateMetadata}
+                      disabled={images.length === 0 || isProcessing || quotaExceeded}
+                      className="grain-gradient px-6 py-4 bg-gradient-to-b from-[#1a1a1a] to-[#0a0a0a] text-primary-foreground rounded-2xl transition-all duration-300 hover:scale-[1.01] hover:shadow-2xl active:scale-[0.99] disabled:opacity-20 disabled:cursor-not-allowed disabled:hover:scale-100 tracking-[-0.01em] text-[0.95rem] relative overflow-hidden group"
+                    >
+                      <span className="relative z-10 flex items-center gap-2">
+                        {isProcessing ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Processing...
+                          </>
+                        ) : (
+                          'Generate & Export CSV'
+                        )}
+                      </span>
+                      <div className="absolute inset-0 bg-gradient-to-t from-transparent via-white/5 to-white/10 rounded-2xl pointer-events-none" />
+                      <div className="absolute inset-0 bg-white/0 group-hover:bg-white/5 rounded-2xl transition-all duration-300 pointer-events-none" />
+                    </button>
+                  )}
                   <button
                     onClick={handleClear}
                     disabled={isProcessing}
@@ -348,6 +407,13 @@ export function Home() {
                     Clear
                   </button>
                 </div>
+
+                {/* Auth prompt for anonymous users */}
+                {!user && (
+                  <p className="text-xs text-muted-foreground text-center">
+                    Free account required to generate metadata
+                  </p>
+                )}
               </div>
             </>
           )}

@@ -18,7 +18,7 @@ vi.mock('../src/config/app.config', () => ({
     server: { port: 3000, nodeEnv: 'test', baseUrl: 'http://localhost:3000' },
     openai: { apiKey: 'test-key', model: 'gpt-5-nano', maxTokens: 500, temperature: 0.3 },
     processing: { concurrencyLimit: 5, maxFileSizeMB: 50, tempFileLifetimeSeconds: 10 },
-    rateLimits: { anonymous: 10, freeTier: 100 },
+    rateLimits: { anonymous: 10, freeTier: 500 },
   },
 }));
 
@@ -33,6 +33,10 @@ vi.mock('../src/config/container', () => ({
           metadata: { title: 'Test', keywords: 'test', category: 1 },
         },
       ]),
+    },
+    usageTracking: {
+      checkQuota: vi.fn().mockResolvedValue({ allowed: true, used: 0, limit: 500, remaining: 500 }),
+      incrementUsage: vi.fn().mockResolvedValue(undefined),
     },
   },
 }));
@@ -78,6 +82,8 @@ describe('Batch Routes - Story 2.6', () => {
   let correlationIdMiddleware: any;
   let batchTrackingService: any;
   let sessionService: any;
+  let extractUserId: any;
+  let mockUsageTracking: any;
 
   beforeAll(async () => {
     // Dynamically import after mocks are set up
@@ -86,12 +92,16 @@ describe('Batch Routes - Story 2.6', () => {
     const correlationModule = await import('../src/api/middleware/correlation-id.middleware');
     const batchServiceModule = await import('../src/services/batch-tracking.service');
     const sessionModule = await import('../src/services/session.service');
+    const authModule = await import('../src/api/middleware/auth.middleware');
+    const containerModule = await import('../src/config/container');
 
     batchRoutes = batchModule.default;
     errorHandler = errorModule.errorHandler;
     correlationIdMiddleware = correlationModule.correlationIdMiddleware;
     batchTrackingService = batchServiceModule.batchTrackingService;
     sessionService = sessionModule.sessionService;
+    extractUserId = authModule.extractUserId;
+    mockUsageTracking = (containerModule.services as any).usageTracking;
   });
 
   beforeEach(() => {
@@ -347,6 +357,7 @@ describe('Batch Routes - Story 2.6', () => {
 
     it('should return 400 if files not found', async () => {
       const sessionId = sessionService.createSession();
+      vi.mocked(extractUserId).mockResolvedValueOnce('user-123');
 
       const response = await request(app)
         .post('/api/process-batch-v2')
@@ -356,6 +367,42 @@ describe('Batch Routes - Story 2.6', () => {
 
       expect(response.body.success).toBe(false);
       expect(response.body.error.message).toContain('Files not found');
+    });
+  });
+
+  describe('Story 6.9: Auth & Quota Enforcement', () => {
+    it('should return 401 when no JWT provided (anonymous blocked)', async () => {
+      const sessionId = sessionService.createSession();
+      // extractUserId returns null by default (mock)
+
+      const response = await request(app)
+        .post('/api/process-batch-v2')
+        .set('Cookie', `session_id=${sessionId}`)
+        .send({ fileIds: ['file-1'] })
+        .expect(401);
+
+      expect(response.body.success).toBe(false);
+      expect(response.body.error.code).toBe('AUTHENTICATION_ERROR');
+      expect(response.body.error.message).toBe('Sign up or log in to generate metadata');
+    });
+
+    it('should return 429 when quota exceeded', async () => {
+      const sessionId = sessionService.createSession();
+      vi.mocked(extractUserId).mockResolvedValueOnce('user-123');
+      vi.mocked(mockUsageTracking.checkQuota).mockResolvedValueOnce({
+        allowed: false,
+        used: 498,
+        limit: 500,
+        remaining: 2,
+      });
+
+      const response = await request(app)
+        .post('/api/process-batch-v2')
+        .set('Cookie', `session_id=${sessionId}`)
+        .send({ fileIds: ['file-1'] })
+        .expect(429);
+
+      expect(response.body.error.message).toContain('free images this month');
     });
   });
 

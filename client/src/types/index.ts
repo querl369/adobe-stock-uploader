@@ -65,4 +65,12 @@ export interface BatchHistoryResponse {
   batches: BatchHistoryItem[];
 }
 
+export interface UsageResponse {
+  tier: string;
+  monthlyLimit: number;
+  used: number;
+  remaining: number;
+  resetsAt: string;
+}
+
 export type AppView = 'upload' | 'processing' | 'results';

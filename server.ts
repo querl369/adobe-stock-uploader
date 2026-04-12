@@ -41,6 +41,9 @@ import batchRoutes from './src/api/routes/batch.routes';
 import { csvRoutes } from './src/api/routes/csv.routes';
 import { CSV_OUTPUT_DIR } from './src/services/csv-export.service';
 
+// Import usage routes (Story 6.9: Monthly Usage Tracking)
+import usageRoutes from './src/api/routes/usage.routes';
+
 // Import batch persistence (Story 4.3)
 import { batchTrackingService } from './src/services/batch-tracking.service';
 import { recordBatchCleanup } from './src/utils/metrics';
@@ -103,6 +106,9 @@ app.use('/api', batchRoutes);
 
 // Register CSV routes (Story 4.1: CSV Generation Service)
 app.use('/api', csvRoutes);
+
+// Register usage routes (Story 6.9: Monthly Usage Tracking)
+app.use('/api', usageRoutes);
 
 // Serve static files from Vite build
 app.use(express.static('dist'));
@@ -509,6 +515,10 @@ if (services.batchPersistence.isAvailable) {
   batchTrackingService.setPersistenceService(services.batchPersistence);
   logger.info('BatchPersistenceService wired into BatchTrackingService');
 }
+
+// Story 6.9: Wire usage tracking service into BatchTrackingService
+batchTrackingService.setUsageTrackingService(services.usageTracking);
+logger.info('UsageTrackingService wired into BatchTrackingService');
 
 // Story 4.3 AC4: Batch cleanup scheduler (expired batches + CSV files)
 export function scheduleBatchCleanup(intervalMs: number = 60 * 60 * 1000): NodeJS.Timeout {

@@ -24,7 +24,7 @@ export const envSchema = z.object({
 
   // Rate Limiting
   ANONYMOUS_LIMIT: z.coerce.number().default(10),
-  FREE_TIER_LIMIT: z.coerce.number().default(100),
+  FREE_TIER_LIMIT: z.coerce.number().default(500),
 
   // Database
   DB_PATH: z.string().default('data/batches.db'),

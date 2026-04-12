@@ -4,6 +4,7 @@ import type {
   BatchStartResponse,
   BatchStatusResponse,
   BatchHistoryResponse,
+  UsageResponse,
 } from '../types';
 
 /**
@@ -43,7 +44,13 @@ async function categorizeHttpError(
   fallbackMessage = 'Request failed'
 ): Promise<never> {
   if (response.status === 429) {
-    throw new ApiError('Free limit reached. Create an account for 100 images/month.', 429);
+    const errorData = await response.json().catch(() => null);
+    throw new ApiError(
+      errorData?.error?.message ||
+        errorData?.message ||
+        'Monthly image limit reached. Try again next month.',
+      429
+    );
   }
   if (response.status === 408 || response.status === 504) {
     throw new ApiError('Request timed out. Please try again.', response.status);
@@ -52,7 +59,10 @@ async function categorizeHttpError(
     throw new ApiError('Something went wrong. Please try again.', response.status);
   }
   const errorData = await response.json().catch(() => ({ message: fallbackMessage }));
-  throw new ApiError(errorData.message || 'Something went wrong', response.status);
+  throw new ApiError(
+    errorData.error?.message || errorData.message || 'Something went wrong',
+    response.status
+  );
 }
 
 async function handleResponse<T>(response: Response): Promise<T> {
@@ -141,6 +151,13 @@ export async function getBatches(options?: {
 }): Promise<BatchHistoryResponse> {
   const response = await safeFetch('/api/batches', { signal: options?.signal });
   return handleResponse<BatchHistoryResponse>(response);
+}
+
+export async function getUsage(): Promise<UsageResponse> {
+  const response = await safeFetch('/api/usage', {
+    headers: await authHeaders(),
+  });
+  return handleResponse<UsageResponse>(response);
 }
 
 export async function downloadBatchCsv(batchId: string): Promise<void> {

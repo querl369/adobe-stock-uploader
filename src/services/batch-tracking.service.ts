@@ -11,6 +11,7 @@ import { randomUUID } from 'crypto';
 import { logger } from '@utils/logger';
 import { supabaseAdmin } from '../lib/supabase';
 import type { BatchPersistenceService } from './batch-persistence.service';
+import type { UsageTrackingService } from './usage-tracking.service';
 import type {
   BatchState,
   BatchStatus,
@@ -31,6 +32,7 @@ class BatchTrackingService {
   private readonly BATCH_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
   private cleanupInterval?: NodeJS.Timeout;
   private persistenceService?: BatchPersistenceService;
+  private usageTrackingService?: UsageTrackingService;
 
   constructor() {
     // Start cleanup job (runs every 10 minutes)
@@ -44,6 +46,14 @@ class BatchTrackingService {
    */
   setPersistenceService(service: BatchPersistenceService): void {
     this.persistenceService = service;
+  }
+
+  /**
+   * Set the usage tracking service for incrementing monthly usage on batch completion.
+   * Story 6.9: Monthly Usage Tracking & Quota Enforcement
+   */
+  setUsageTrackingService(service: UsageTrackingService): void {
+    this.usageTrackingService = service;
   }
 
   /**
@@ -508,6 +518,16 @@ class BatchTrackingService {
             'Supabase persistence error — continuing without'
           );
         });
+    }
+
+    // Story 6.9: Increment usage tracking (non-fatal, fire-and-forget)
+    if (batch.userId && completedCount > 0 && this.usageTrackingService) {
+      this.usageTrackingService.incrementUsage(batch.userId, completedCount).catch(error => {
+        logger.warn(
+          { batchId: batch.batchId, error: error instanceof Error ? error.message : 'Unknown' },
+          'Usage tracking increment failed — continuing without'
+        );
+      });
     }
   }
 

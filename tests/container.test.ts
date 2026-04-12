@@ -42,12 +42,22 @@ vi.mock('../src/config/app.config', () => ({
     },
     rateLimits: {
       anonymous: 10,
-      freeTier: 100,
+      freeTier: 500,
     },
     database: {
       path: ':memory:',
     },
+    supabase: {
+      url: undefined,
+      anonKey: undefined,
+      serviceRoleKey: undefined,
+    },
   },
+}));
+
+// Mock supabase (needed by UsageTrackingService)
+vi.mock('../src/lib/supabase', () => ({
+  supabaseAdmin: null,
 }));
 
 import { container, services } from '../src/config/container';
@@ -244,6 +254,17 @@ describe('Dependency Injection Container', () => {
       expect(typeof category.getAllCategories).toBe('function');
       expect(typeof category.toValidCategoryId).toBe('function');
     });
+
+    it('should expose UsageTrackingService (Story 6.9)', () => {
+      const { usageTracking } = container.services;
+
+      expect(usageTracking).toBeDefined();
+      expect(typeof usageTracking.getUsage).toBe('function');
+      expect(typeof usageTracking.checkQuota).toBe('function');
+      expect(typeof usageTracking.incrementUsage).toBe('function');
+      expect(typeof usageTracking.getCurrentMonthYear).toBe('function');
+      expect(typeof usageTracking.getResetDate).toBe('function');
+    });
   });
 
   describe('singleton pattern', () => {
@@ -291,6 +312,7 @@ describe('Dependency Injection Container', () => {
         'category',
         'metadataValidation',
         'batchPersistence',
+        'usageTracking',
       ];
       const actualServices = Object.keys(serviceContainer);
 
