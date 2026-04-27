@@ -13,6 +13,7 @@ export function DropZone({
   const [{ isOver }, drop] = useDrop(
     () => ({
       accept: ['__NATIVE_FILE__'],
+      canDrop: () => !disabled,
       drop: (_item: unknown, monitor) => {
         const files = monitor.getItem()?.files;
         if (files) {
@@ -23,7 +24,7 @@ export function DropZone({
         isOver: !!monitor.isOver(),
       }),
     }),
-    [onFileDrop]
+    [onFileDrop, disabled]
   );
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -34,6 +35,7 @@ export function DropZone({
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (disabled) return;
     const files = Array.from(e.dataTransfer.files);
     if (files.length > 0) {
       onFileDrop(files);

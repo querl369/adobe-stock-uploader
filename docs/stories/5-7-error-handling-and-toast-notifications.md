@@ -1,6 +1,6 @@
 # Story 5.7: Error Handling & Toast Notifications
 
-Status: in-progress
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -485,15 +485,18 @@ None — implementation proceeded without issues.
 - **2026-03-24:** Code review fixes — fixed double toast on CSV download (removed duplicate from app.tsx handleDownloadCsv), added isUploading state to disable upload zone during uploads (AC5), set toast duration to 5s and added closeButton prop (AC1), added status-specific error handling to downloadBatchCsv (AC3).
 - **2026-03-24:** Code review 2 fixes — [H2] guard handleFileSelect against concurrent uploads via drag-and-drop, [M1] extracted shared categorizeHttpError helper to DRY up client.ts, [M2] success toast now shows image count, [M3] isUploading prop made required, [L1] explicit CSSProperties import in sonner.tsx, [L2] added try/catch to handleDownload in ResultsView. Story status set to in-progress pending manual verification.
 - **2026-03-25:** Code review 3 fixes — [M1] added toast.warning for partial CSV auto-download on processing failure, [M2] added 504 Gateway Timeout handling to categorizeHttpError before >=500 catch-all, [M3] cleanup() now uses categorizeHttpError for consistent error handling, [L1] DropZone suppresses drag-over visual feedback when disabled/uploading, [L2] added toast.success for auto-downloaded CSV on processing completion, [L3] safeFetch explicitly passes through AbortError and converts all other errors to user-friendly messages. Build passes (1811 modules), 965 tests pass.
+- **2026-04-27:** Code review 4 fixes — [H1] DropZone now truly blocks drops when disabled (added canDrop guard to react-dnd useDrop and disabled check to native handleDrop), [M1] 429 fallback message aligned with AC3 spec, [M2] polling loop in handleGenerateMetadata now has 10-minute hard timeout, [L2] ResultsView batch history load failure now shows toast.error. Build passes (1880 modules), 1127 tests pass. Story marked done.
 
 ### File List
 
 - `client/src/components/ui/sonner.tsx` — REWRITTEN (removed next-themes, simplified Sonner export)
 - `client/src/components/ErrorBoundary.tsx` — NEW (React class error boundary with grain-gradient fallback UI)
 - `client/src/app.tsx` — MODIFIED (added Toaster, toast imports, Loader2 spinner, replaced 4 alert() with toast.error(), added success toasts, isUploading state, closeButton + duration on Toaster)
-- `client/src/api/client.ts` — MODIFIED (enhanced handleResponse with status-specific errors, added safeFetch wrapper, replaced all fetch with safeFetch, added status-specific errors to downloadBatchCsv)
-- `client/src/components/ResultsView.tsx` — MODIFIED (added toast import, supplementary success/error toasts for download operations)
+- `client/src/api/client.ts` — MODIFIED (enhanced handleResponse with status-specific errors, added safeFetch wrapper, replaced all fetch with safeFetch, added status-specific errors to downloadBatchCsv; code review 4: 429 fallback message aligned with AC3)
+- `client/src/components/ResultsView.tsx` — MODIFIED (added toast import, supplementary success/error toasts for download operations; code review 4: toast.error on batch history load failure)
 - `client/src/components/UploadView.tsx` — MODIFIED (added isUploading prop, disabled Select Images button and Add more images link during upload)
+- `client/src/components/DropZone.tsx` — MODIFIED (code review 4: added canDrop: () => !disabled to useDrop, added disabled guard to native handleDrop, added disabled to dependency array)
+- `client/src/pages/Home.tsx` — MODIFIED (code review 4: 10-minute polling timeout in handleGenerateMetadata)
 - `client/src/main.tsx` — MODIFIED (wrapped App with ErrorBoundary)
 - `package.json` — MODIFIED (added sonner dependency)
 - `package-lock.json` — MODIFIED (lockfile updated)

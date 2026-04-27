@@ -54,7 +54,7 @@ export function ResultsView({
       })
       .catch(err => {
         if (err.name === 'AbortError') return;
-        // Hide section on error
+        toast.error('Failed to load batch history');
       })
       .finally(() => {
         if (!controller.signal.aborted) setBatchesLoading(false);

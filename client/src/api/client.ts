@@ -48,7 +48,7 @@ async function categorizeHttpError(
     throw new ApiError(
       errorData?.error?.message ||
         errorData?.message ||
-        'Monthly image limit reached. Try again next month.',
+        'Free limit reached. Create an account for 100 images/month.',
       429
     );
   }

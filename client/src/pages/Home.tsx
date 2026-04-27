@@ -68,7 +68,10 @@ export function Home() {
     if (validationTimerRef.current) clearTimeout(validationTimerRef.current);
     setValidationErrors([]);
 
-    const { valid, errors } = validateFiles(files, images.length);
+    const { valid, errors } = validateFiles(files, images.length, {
+      isAuthenticated: !!user,
+      remainingQuota: usage?.remaining ?? null,
+    });
 
     if (errors.length > 0) {
       setValidationErrors(errors);
@@ -126,6 +129,7 @@ export function Home() {
     setProcessingDuration(null);
     setIsProcessing(true);
 
+    const POLLING_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
     let lastStatusData: BatchStatusResponse | null = null;
 
     try {
@@ -133,6 +137,9 @@ export function Home() {
       let isComplete = false;
 
       while (!isComplete) {
+        if (Date.now() - startTime > POLLING_TIMEOUT_MS) {
+          throw new Error('Request timed out. Please try again.');
+        }
         const statusData = await getBatchStatus(batchId);
 
         lastStatusData = statusData;
@@ -272,7 +279,7 @@ export function Home() {
   return (
     <DndProvider backend={HTML5Backend}>
       <DropZone onFileDrop={handleFileSelect} disabled={isUploading}>
-        <div className="flex flex-col items-center gap-8 max-w-5xl w-full pt-20 pb-32">
+        <div className="flex flex-col items-center gap-8 max-w-5xl w-full pt-10 pb-32">
           {/* Hero Section */}
           <div className="text-center space-y-2 max-w-3xl px-4">
             <h1 className="tracking-[-0.04em] opacity-95 text-[clamp(2.5rem,5vw,4rem)] leading-[1.1]">

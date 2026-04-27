@@ -105,7 +105,7 @@ development_status:
   5-4-results-view-and-metadata-preview: done  # Code review approved 2026-03-23. 8 issues fixed (1H, 3M, 4L)
   5-5-dark-mode-default-and-visual-polish: deferred  # Deferred per Sprint Change Proposal 2026-03-26 — not a priority for beta
   5-6-responsive-design-and-mobile-optimization: backlog
-  5-7-error-handling-and-toast-notifications: review  # Status corrected 2026-03-26 — code review pending, was incorrectly marked ready-for-dev
+  5-7-error-handling-and-toast-notifications: done  # Code review 4 approved 2026-04-27. 4 issues fixed (1H, 1M, 2L+M)
   epic-5-retrospective: optional
 
   # Epic 6: User Account System
