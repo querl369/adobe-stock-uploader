@@ -27,7 +27,7 @@ import {
   sessionUploadLimitMiddleware,
 } from '../middleware/rate-limit.middleware';
 import { sessionService } from '../../services/session.service';
-import { extractUserId } from '../middleware/auth.middleware';
+import { attachUserIdMiddleware, AuthAwareRequest } from '../middleware/auth.middleware';
 
 const router: Router = express.Router();
 
@@ -47,40 +47,47 @@ const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'
 const MAX_FILE_SIZE = config.processing.maxFileSizeMB * 1024 * 1024; // Convert MB to bytes
 
 /**
- * Multer configuration for batch upload
+ * Multer configuration factory for batch upload
  * Story 2.1 AC5: Save files to disk with UUID naming
  * Format: /uploads/{uuid}-{original-name}
+ *
+ * Two instances: anonymous users get a small per-request cap (abuse/DoS
+ * protection — rejected before bytes hit disk), authenticated users get a
+ * higher cap tuned for realistic batch sizes within the monthly quota.
  */
-const uploadMultiple = multer({
-  storage: multer.diskStorage({
-    destination: (req, file, callback) => {
-      callback(null, UPLOADS_DIR);
+function makeUploader(maxFiles: number) {
+  return multer({
+    storage: multer.diskStorage({
+      destination: (req, file, callback) => {
+        callback(null, UPLOADS_DIR);
+      },
+      filename: (req, file, callback) => {
+        const uuid = randomUUID();
+        const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const filename = `${uuid}-${sanitizedName}`;
+        callback(null, filename);
+      },
+    }),
+    limits: {
+      fileSize: MAX_FILE_SIZE,
+      files: maxFiles,
     },
-    filename: (req, file, callback) => {
-      // Story 2.1 AC5: UUID-based filename
-      const uuid = randomUUID();
-      const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const filename = `${uuid}-${sanitizedName}`;
-      callback(null, filename);
+    fileFilter: (req, file, callback) => {
+      if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
+        callback(
+          new ValidationError(
+            `Invalid file type: ${file.mimetype}. Only JPG, PNG, and WEBP are allowed.`
+          )
+        );
+        return;
+      }
+      callback(null, true);
     },
-  }),
-  limits: {
-    fileSize: MAX_FILE_SIZE,
-    files: 10, // Story 2.1 AC3: Max 10 files for anonymous users
-  },
-  fileFilter: (req, file, callback) => {
-    // Story 2.1 AC1: Validate MIME types
-    if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-      callback(
-        new ValidationError(
-          `Invalid file type: ${file.mimetype}. Only JPG, PNG, and WEBP are allowed.`
-        )
-      );
-      return;
-    }
-    callback(null, true);
-  },
-});
+  });
+}
+
+const anonUploader = makeUploader(config.rateLimits.anonymous);
+const authUploader = makeUploader(config.rateLimits.authBatchMax);
 
 /**
  * Validate image file is not corrupted
@@ -111,11 +118,14 @@ router.post(
   '/upload-images',
   sessionMiddleware, // Story 2.2: Create/validate session cookie
   ipRateLimitMiddleware, // Story 2.3: Per-IP rate limiting
-  asyncHandler(async (req: SessionRequest, res: Response, next) => {
-    // First, run multer to handle file upload
-    uploadMultiple.array('images', 10)(req, res, async err => {
+  attachUserIdMiddleware, // Sets req.userId before multer so auth-aware caps apply
+  asyncHandler(async (req: AuthAwareRequest, res: Response, next) => {
+    const isAuthenticated = !!req.userId;
+    const maxFiles = isAuthenticated ? config.rateLimits.authBatchMax : config.rateLimits.anonymous;
+    const uploader = isAuthenticated ? authUploader : anonUploader;
+
+    uploader.array('images', maxFiles)(req, res, async err => {
       if (err) {
-        // Multer errors
         if (err instanceof multer.MulterError) {
           if (err.code === 'LIMIT_FILE_SIZE') {
             return next(
@@ -127,7 +137,9 @@ router.post(
             );
           }
           if (err.code === 'LIMIT_FILE_COUNT') {
-            return next(new ValidationError('Too many files. Maximum 10 files allowed.'));
+            return next(
+              new ValidationError(`Too many files. Maximum ${maxFiles} files allowed per upload.`)
+            );
           }
           if (err.code === 'LIMIT_UNEXPECTED_FILE') {
             return next(
@@ -142,15 +154,9 @@ router.post(
         const files = req.files as Express.Multer.File[];
         const sessionId = req.sessionId!;
 
-        // Story 2.1 AC6: Return error 400 if no files
         if (!files || files.length === 0) {
-          throw new ValidationError('No files uploaded. Please upload 1-10 images.');
+          throw new ValidationError(`No files uploaded. Please upload 1-${maxFiles} images.`);
         }
-
-        // Story 2.1 AC3 & Story 2.3: Enforce session-based rate limit
-        // Story 6.8: Authenticated users bypass anonymous session limit
-        const userId = await extractUserId(req);
-        const isAuthenticated = userId !== null;
 
         if (!isAuthenticated) {
           // Check if adding these files would exceed the anonymous limit

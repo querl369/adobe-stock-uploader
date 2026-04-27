@@ -27,7 +27,7 @@ export function AccountLayout() {
   };
 
   return (
-    <div className="flex flex-col items-center pt-32 pb-32 px-4">
+    <div className="flex flex-col items-center pt-18 pb-32 px-4">
       <div className="w-full max-w-4xl space-y-12">
         {/* Header */}
         <div className="space-y-2 border-b border-border/10 pb-8">

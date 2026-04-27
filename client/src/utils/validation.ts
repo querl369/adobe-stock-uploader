@@ -9,9 +9,15 @@ export interface ValidationError {
   reason: string;
 }
 
+export interface ValidateFilesOptions {
+  isAuthenticated: boolean;
+  remainingQuota: number | null;
+}
+
 export function validateFiles(
   files: File[],
-  currentCount: number
+  currentCount: number,
+  options: ValidateFilesOptions = { isAuthenticated: false, remainingQuota: null }
 ): { valid: File[]; errors: ValidationError[] } {
   const errors: ValidationError[] = [];
   const valid: File[] = [];
@@ -36,13 +42,24 @@ export function validateFiles(
     valid.push(file);
   }
 
-  const availableSlots = MAX_IMAGE_COUNT - currentCount;
-  if (valid.length > availableSlots) {
-    errors.push({
-      fileName: '',
-      reason: `Too many files. Anonymous users can process ${MAX_IMAGE_COUNT} images.`,
-    });
-    valid.length = Math.max(0, availableSlots);
+  let cap: number | null;
+  let overLimitMessage: string;
+
+  if (options.isAuthenticated) {
+    cap = options.remainingQuota;
+    const remaining = options.remainingQuota ?? 0;
+    overLimitMessage = `Only ${remaining} image${remaining === 1 ? '' : 's'} remaining this month.`;
+  } else {
+    cap = MAX_IMAGE_COUNT;
+    overLimitMessage = `Too many files. Anonymous users can process ${MAX_IMAGE_COUNT} images.`;
+  }
+
+  if (cap !== null) {
+    const availableSlots = cap - currentCount;
+    if (valid.length > availableSlots) {
+      errors.push({ fileName: '', reason: overLimitMessage });
+      valid.length = Math.max(0, availableSlots);
+    }
   }
 
   return { valid, errors };

@@ -18,13 +18,23 @@ vi.mock('../src/config/app.config', () => ({
     server: { port: 3000, nodeEnv: 'test', baseUrl: 'http://localhost:3000' },
     openai: { apiKey: 'test-key', model: 'gpt-5-nano', maxTokens: 500, temperature: 0.3 },
     processing: { concurrencyLimit: 5, maxFileSizeMB: 50, tempFileLifetimeSeconds: 10 },
-    rateLimits: { anonymous: 10, freeTier: 100 },
+    rateLimits: { anonymous: 10, freeTier: 100, authBatchMax: 100 },
   },
 }));
 
-// Story 6.8: Mock supabase admin client (auth.middleware.ts dependency)
+// Mock supabase admin — returns a user when Bearer token is 'auth-token', else
+// returns an error. Lets tests select anonymous vs authenticated per request.
 vi.mock('../src/lib/supabase', () => ({
-  supabaseAdmin: null,
+  supabaseAdmin: {
+    auth: {
+      getUser: vi.fn(async (token: string) => {
+        if (token === 'auth-token') {
+          return { data: { user: { id: 'test-user-id' } }, error: null };
+        }
+        return { data: { user: null }, error: { message: 'invalid token' } };
+      }),
+    },
+  },
 }));
 
 describe('Upload Routes - Story 2.1', () => {
@@ -69,7 +79,7 @@ describe('Upload Routes - Story 2.1', () => {
       expect(response.body.message).toContain('Successfully uploaded');
     });
 
-    it('AC3: should accept multiple images (up to 10)', async () => {
+    it('AC3: anonymous accepts up to 10 images', async () => {
       const req = request(app).post('/api/upload-images');
 
       // Attach 3 test images
@@ -84,10 +94,9 @@ describe('Upload Routes - Story 2.1', () => {
       expect(response.body.message).toContain('3 file(s)');
     });
 
-    it('AC3: should reject more than 10 files', async () => {
+    it('AC3: anonymous rejects more than 10 files', async () => {
       const req = request(app).post('/api/upload-images');
 
-      // Attach exactly 11 files to trigger the limit
       for (let i = 0; i < 11; i++) {
         req.attach('images', testImagePath);
       }
@@ -95,14 +104,43 @@ describe('Upload Routes - Story 2.1', () => {
       try {
         const response = await req;
 
-        // If we get a response, it should be an error
         expect(response.status).toBeGreaterThanOrEqual(400);
         expect(response.body.success).toBe(false);
         expect(response.body.error.message).toMatch(/too many files/i);
+        expect(response.body.error.message).toMatch(/Maximum 10 files/);
       } catch (error: any) {
-        // Multer may close connection causing EPIPE
-        // This is acceptable behavior for security - preventing DOS attacks
-        // The important thing is the request is rejected
+        // Multer may close connection causing EPIPE — acceptable DoS protection.
+        expect(error.message).toMatch(/EPIPE|socket hang up|ECONNRESET/i);
+      }
+    });
+
+    it('authenticated user accepts 15 files', async () => {
+      const req = request(app).post('/api/upload-images').set('Authorization', 'Bearer auth-token');
+
+      for (let i = 0; i < 15; i++) {
+        req.attach('images', testImagePath);
+      }
+
+      const response = await req.expect(200);
+
+      expect(response.body.success).toBe(true);
+      expect(response.body.files).toHaveLength(15);
+    });
+
+    it('authenticated user rejected above auth cap (101 files)', async () => {
+      const req = request(app).post('/api/upload-images').set('Authorization', 'Bearer auth-token');
+
+      for (let i = 0; i < 101; i++) {
+        req.attach('images', testImagePath);
+      }
+
+      try {
+        const response = await req;
+
+        expect(response.status).toBeGreaterThanOrEqual(400);
+        expect(response.body.success).toBe(false);
+        expect(response.body.error.message).toMatch(/Maximum 100 files/);
+      } catch (error: any) {
         expect(error.message).toMatch(/EPIPE|socket hang up|ECONNRESET/i);
       }
     });

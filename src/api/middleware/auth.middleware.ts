@@ -6,9 +6,14 @@
  * Non-throwing — returns null for anonymous users or invalid tokens.
  */
 
-import type { Request } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { supabaseAdmin } from '../../lib/supabase';
 import { logger } from '../../utils/logger';
+import type { SessionRequest } from './session.middleware';
+
+export interface AuthAwareRequest extends SessionRequest {
+  userId?: string | null;
+}
 
 /**
  * Extract user ID from Supabase JWT in Authorization header.
@@ -46,4 +51,22 @@ export async function extractUserId(req: Request): Promise<string | null> {
     );
     return null;
   }
+}
+
+/**
+ * Populates req.userId by calling extractUserId. Non-throwing; anonymous
+ * requests get userId = null. Runs before multer so auth state is known
+ * before any file bytes are written to disk.
+ */
+export async function attachUserIdMiddleware(
+  req: AuthAwareRequest,
+  _res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    req.userId = await extractUserId(req);
+  } catch {
+    req.userId = null;
+  }
+  next();
 }

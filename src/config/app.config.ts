@@ -25,6 +25,7 @@ export const envSchema = z.object({
   // Rate Limiting
   ANONYMOUS_LIMIT: z.coerce.number().default(10),
   FREE_TIER_LIMIT: z.coerce.number().default(500),
+  AUTH_BATCH_MAX_FILES: z.coerce.number().default(100),
 
   // Database
   DB_PATH: z.string().default('data/batches.db'),
@@ -96,6 +97,7 @@ class ConfigService {
     return {
       anonymous: this.config.ANONYMOUS_LIMIT,
       freeTier: this.config.FREE_TIER_LIMIT,
+      authBatchMax: this.config.AUTH_BATCH_MAX_FILES,
     };
   }
 

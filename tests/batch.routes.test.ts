@@ -18,7 +18,7 @@ vi.mock('../src/config/app.config', () => ({
     server: { port: 3000, nodeEnv: 'test', baseUrl: 'http://localhost:3000' },
     openai: { apiKey: 'test-key', model: 'gpt-5-nano', maxTokens: 500, temperature: 0.3 },
     processing: { concurrencyLimit: 5, maxFileSizeMB: 50, tempFileLifetimeSeconds: 10 },
-    rateLimits: { anonymous: 10, freeTier: 500 },
+    rateLimits: { anonymous: 10, freeTier: 500, authBatchMax: 100 },
   },
 }));
 
@@ -341,9 +341,10 @@ describe('Batch Routes - Story 2.6', () => {
       expect(response.body.error.message).toContain('fileIds');
     });
 
-    it('should return 400 if more than 10 files', async () => {
+    it('authenticated user rejected above authBatchMax (101 fileIds)', async () => {
       const sessionId = sessionService.createSession();
-      const fileIds = Array.from({ length: 11 }, (_, i) => `file-${i}`);
+      vi.mocked(extractUserId).mockResolvedValueOnce('user-123');
+      const fileIds = Array.from({ length: 101 }, (_, i) => `file-${i}`);
 
       const response = await request(app)
         .post('/api/process-batch-v2')
@@ -352,7 +353,40 @@ describe('Batch Routes - Story 2.6', () => {
         .expect(400);
 
       expect(response.body.success).toBe(false);
-      expect(response.body.error.message).toContain('Maximum 10 files');
+      expect(response.body.error.message).toContain('Maximum 100 files');
+    });
+
+    it('authenticated user passes 15 fileIds through count check', async () => {
+      // Regression: old cap of 10 would reject 15 here with 400 "Maximum 10".
+      // Now 15 is under authBatchMax (100), so request proceeds past the
+      // count check and fails later on "Files not found" instead.
+      const sessionId = sessionService.createSession();
+      vi.mocked(extractUserId).mockResolvedValueOnce('user-123');
+      const fileIds = Array.from({ length: 15 }, (_, i) => `file-${i}`);
+
+      const response = await request(app)
+        .post('/api/process-batch-v2')
+        .set('Cookie', `session_id=${sessionId}`)
+        .send({ fileIds })
+        .expect(400);
+
+      expect(response.body.error.message).toContain('Files not found');
+      expect(response.body.error.message).not.toContain('Maximum');
+    });
+
+    it('anonymous user gets 401 before file count check', async () => {
+      // Regression guard for the auth-first ordering. Sending 101 fileIds with
+      // no auth should surface the auth error, not "Maximum 100 files".
+      const sessionId = sessionService.createSession();
+      const fileIds = Array.from({ length: 101 }, (_, i) => `file-${i}`);
+
+      const response = await request(app)
+        .post('/api/process-batch-v2')
+        .set('Cookie', `session_id=${sessionId}`)
+        .send({ fileIds })
+        .expect(401);
+
+      expect(response.body.error.code).toBe('AUTHENTICATION_ERROR');
     });
 
     it('should return 400 if files not found', async () => {

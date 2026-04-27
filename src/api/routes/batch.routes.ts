@@ -126,14 +126,15 @@ router.post(
       throw new ValidationError('fileIds array is required and must not be empty');
     }
 
-    if (fileIds.length > 10) {
-      throw new ValidationError('Maximum 10 files can be processed at once');
-    }
-
     // Story 6.9: Auth is required for batch processing
     const userId = await extractUserId(req);
     if (!userId) {
       throw new AuthenticationError('Sign up or log in to generate metadata');
+    }
+
+    const maxBatch = config.rateLimits.authBatchMax;
+    if (fileIds.length > maxBatch) {
+      throw new ValidationError(`Maximum ${maxBatch} files can be processed at once`);
     }
 
     // Story 6.9: Quota enforcement — check before processing
