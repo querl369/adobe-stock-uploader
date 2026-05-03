@@ -26,10 +26,28 @@ vi.mock('../src/lib/supabase', () => ({
   supabaseAdmin: null,
 }));
 
-// Mock auth middleware
-const mockExtractUserId = vi.fn().mockResolvedValue(null);
+// Mock auth middleware - requireAuth delegates to mockExtractUserId so per-test
+// `mockExtractUserId.mockResolvedValueOnce(...)` controls auth state for both
+// the inline-extractUserId path AND the new requireAuth middleware path.
+const { mockExtractUserId } = vi.hoisted(() => ({
+  mockExtractUserId: vi.fn().mockResolvedValue(null),
+}));
 vi.mock('../src/api/middleware/auth.middleware', () => ({
   extractUserId: mockExtractUserId,
+  requireAuth: vi.fn(async (req: any, _res: any, next: any) => {
+    try {
+      const userId = await mockExtractUserId(req);
+      if (!userId) {
+        const { AuthenticationError } = await import('../src/models/errors');
+        next(new AuthenticationError('Sign up or log in to continue'));
+        return;
+      }
+      req.userId = userId;
+      next();
+    } catch (e) {
+      next(e);
+    }
+  }),
 }));
 
 // Mock services container
@@ -114,7 +132,7 @@ describe('Usage Routes - Story 6.9', () => {
 
     expect(response.body.success).toBe(false);
     expect(response.body.error.code).toBe('AUTHENTICATION_ERROR');
-    expect(response.body.error.message).toBe('Authentication required');
+    expect(response.body.error.message).toBe('Sign up or log in to continue');
     expect(mockGetUsage).not.toHaveBeenCalled();
   });
 

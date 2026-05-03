@@ -13,6 +13,7 @@
     "dev:server": "ts-node -r tsconfig-paths/register server.ts",
     "build": "vite build",
     "start": "npm run build && ts-node server.ts",
+    "start:prod": "ts-node --transpile-only -r tsconfig-paths/register server.ts",
     "preview": "vite preview",
     "prepare": "husky"
   },
@@ -62,6 +63,7 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.3.1",
     "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
     "typescript": "^5.8.2",
     "vite": "^7.2.2",
     "zod": "^4.1.12"
@@ -81,7 +83,6 @@
     "prettier": "^3.6.2",
     "supertest": "^7.1.4",
     "tailwindcss": "^4.2.2",
-    "tsconfig-paths": "^4.2.0",
     "vitest": "^4.0.8"
   }
 }

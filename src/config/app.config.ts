@@ -4,11 +4,11 @@ import { logger } from '@utils/logger';
 
 dotenv.config();
 
-export const envSchema = z.object({
+const envObjectSchema = z.object({
   // Server
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(3000),
-  BASE_URL: z.string().url().default('http://localhost:3000'),
+  BASE_URL: z.url().default('http://localhost:3000'),
 
   // OpenAI
   OPENAI_API_KEY: z.string().min(20, 'OpenAI API key is required'),
@@ -31,7 +31,7 @@ export const envSchema = z.object({
   DB_PATH: z.string().default('data/batches.db'),
 
   // Supabase
-  SUPABASE_URL: z.string().url().optional(),
+  SUPABASE_URL: z.url().optional(),
   SUPABASE_ANON_KEY: z.string().min(20).optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(20).optional(),
 
@@ -40,6 +40,48 @@ export const envSchema = z.object({
     .string()
     .default('false')
     .transform(val => ['true', '1'].includes(val.toLowerCase())),
+});
+
+// beta-deployment T12 + T13: production-only refinements. superRefine sees the
+// parsed NODE_ENV, so tests can drive these by passing { NODE_ENV: 'production' }
+// to safeParse without mutating the real process.env.
+export const envSchema = envObjectSchema.superRefine((data, ctx) => {
+  if (data.NODE_ENV !== 'production') return;
+
+  // T12: BASE_URL must be a public URL in production. Otherwise temp URLs
+  // handed to OpenAI's network resolve to the container's loopback.
+  if (data.BASE_URL.includes('localhost') || data.BASE_URL.includes('127.0.0.1')) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['BASE_URL'],
+      message: 'BASE_URL must be a public URL when NODE_ENV=production',
+    });
+  }
+
+  // T13: Supabase service-role key is required in production. auth.middleware
+  // returns null when supabaseAdmin is unavailable; combined with requireAuth
+  // that 401s every authenticated user silently. Boot-fail is correct here.
+  if (!data.SUPABASE_URL) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['SUPABASE_URL'],
+      message: 'SUPABASE_URL is required when NODE_ENV=production',
+    });
+  }
+  if (!data.SUPABASE_ANON_KEY) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['SUPABASE_ANON_KEY'],
+      message: 'SUPABASE_ANON_KEY is required when NODE_ENV=production',
+    });
+  }
+  if (!data.SUPABASE_SERVICE_ROLE_KEY) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['SUPABASE_SERVICE_ROLE_KEY'],
+      message: 'SUPABASE_SERVICE_ROLE_KEY is required when NODE_ENV=production',
+    });
+  }
 });
 
 export type AppConfig = z.infer<typeof envSchema>;
@@ -51,7 +93,7 @@ class ConfigService {
     const result = envSchema.safeParse(process.env);
 
     if (!result.success) {
-      logger.error({ errors: result.error.format() }, 'Configuration validation failed');
+      logger.error({ issues: result.error.issues }, 'Configuration validation failed');
       process.exit(1);
     }
 

@@ -16,6 +16,11 @@ import { services } from './src/config/container';
 // Import error handling middleware
 import { errorHandler, notFoundHandler, asyncHandler } from './src/api/middleware/error-handler';
 
+// beta-deployment T5: Strict auth gate for legacy endpoints that trigger
+// OpenAI work / mutate user state / consume CPU. /api/upload-images and
+// /api/cleanup remain public (drop-then-signup UX, mount-time cleanup).
+import { requireAuth } from './src/api/middleware/auth.middleware';
+
 // Import typed errors
 import { ValidationError, ProcessingError, NotFoundError } from './src/models/errors';
 
@@ -86,6 +91,12 @@ interface MetadataItem {
 const app = express();
 const PORT = config.server.port;
 
+// beta-deployment T11: Trust the first hop (Railway's edge / any reverse
+// proxy) so req.ip resolves from X-Forwarded-For. Without this the per-IP
+// rate limiter collapses all traffic into the load balancer's IP. `1`
+// (single hop) prevents header-spoof bypass that `true` would allow.
+app.set('trust proxy', 1);
+
 // Middleware - allows receiving JSON data and serving static files
 app.use(express.json());
 
@@ -140,6 +151,7 @@ const upload = multer({
 // Uses asyncHandler and typed errors (Story 1.6 AC8 & AC9)
 app.post(
   '/api/upload',
+  requireAuth,
   upload.single('image'),
   asyncHandler(async (req: Request, res: Response) => {
     const file = req.file as Express.Multer.File;
@@ -180,6 +192,7 @@ app.post(
 // Uses asyncHandler and typed errors (Story 1.6 AC8 & AC9)
 app.post(
   '/api/process-image',
+  requireAuth,
   asyncHandler(async (req: Request, res: Response) => {
     const { fileId, filename } = req.body;
     const filePath = path.join('uploads', fileId);
@@ -220,6 +233,7 @@ app.post(
 // Uses asyncHandler and typed errors (Story 1.6 AC8 & AC9)
 app.post(
   '/api/process-batch',
+  requireAuth,
   asyncHandler(async (req: Request, res: Response) => {
     const { initials } = req.body as {
       initials: string;
@@ -362,6 +376,7 @@ app.post(
 // Legacy endpoint kept for backwards compatibility — no new features.
 app.post(
   '/api/export-csv',
+  requireAuth,
   asyncHandler(async (req: Request, res: Response) => {
     logger.warn(
       'Deprecated endpoint POST /api/export-csv called — use GET /api/download-csv/:batchId'
@@ -441,10 +456,14 @@ app.get('/metrics', async (req: Request, res: Response) => {
 // SPA Fallback - Serve index.html for all non-API routes
 // ============================================
 
-app.get('*', (req: Request, res: Response) => {
-  if (!req.path.startsWith('/api') && !req.path.startsWith('/metrics')) {
-    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+app.get('*', (req: Request, res: Response, next) => {
+  if (req.path.startsWith('/api') || req.path.startsWith('/metrics')) {
+    // Let unmatched API/metrics paths fall through to notFoundHandler so the
+    // client gets a 404 instead of a hung socket.
+    next();
+    return;
   }
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
 // ============================================
@@ -565,10 +584,24 @@ const batchCleanupInterval = scheduleBatchCleanup();
 // Graceful shutdown handler — drain in-flight requests before exiting
 const shutdown = (signal: string) => {
   logger.info({ signal }, 'Received shutdown signal, cleaning up...');
+
+  // beta-deployment T14: Force-exit at 25s. Railway sends SIGKILL at 30s, and
+  // server.close() waits for in-flight requests indefinitely. The 5s margin
+  // lets us emit a final log line before the platform yanks the process.
+  // .unref() so a clean shutdown isn't held open by this timer.
+  setTimeout(() => {
+    logger.error({ signal }, 'Graceful shutdown exceeded 25s, forcing exit');
+    process.exit(1);
+  }, 25_000).unref();
+
   clearInterval(csvCleanupInterval);
   clearInterval(batchCleanupInterval);
-  services.batchPersistence.close();
+  // Close the HTTP server first to drain in-flight requests, THEN close
+  // SQLite. Closing the DB before the drain finishes makes routes that touch
+  // batchPersistence (e.g. /api/batches, /api/batch-status/:id) throw on a
+  // closed handle and return 500 to clients we were trying to serve cleanly.
   server.close(() => {
+    services.batchPersistence.close();
     logger.info('HTTP server closed, exiting');
     process.exit(0);
   });

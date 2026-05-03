@@ -42,7 +42,9 @@ vi.mock('../src/lib/supabase', () => ({
   },
 }));
 
-import { extractUserId } from '../src/api/middleware/auth.middleware';
+import { extractUserId, requireAuth } from '../src/api/middleware/auth.middleware';
+import { AuthenticationError } from '../src/models/errors';
+import type { Response, NextFunction } from 'express';
 
 function createMockRequest(authHeader?: string): Request {
   return {
@@ -116,5 +118,84 @@ describe('extractUserId - Story 6.8', () => {
     const result = await extractUserId(req);
 
     expect(result).toBeNull();
+  });
+});
+
+describe('requireAuth - beta deployment hardening', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSupabaseAdmin = {
+      auth: { getUser: mockGetUser },
+    };
+  });
+
+  function createCallables() {
+    const res = {} as Response;
+    const next = vi.fn() as NextFunction & ReturnType<typeof vi.fn>;
+    return { res, next };
+  }
+
+  it('calls next() and sets req.userId on a valid Bearer token', async () => {
+    mockGetUser.mockResolvedValue({
+      data: { user: { id: 'user-xyz-789' } },
+      error: null,
+    });
+    const req = createMockRequest('Bearer good-token') as Request & { userId?: string | null };
+    const { res, next } = createCallables();
+
+    await requireAuth(req as any, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith();
+    expect(req.userId).toBe('user-xyz-789');
+  });
+
+  it('forwards AuthenticationError when Authorization header missing', async () => {
+    const req = createMockRequest() as Request;
+    const { res, next } = createCallables();
+
+    await requireAuth(req as any, res, next as NextFunction);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const err = (next as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(err).toBeInstanceOf(AuthenticationError);
+    expect(err.code).toBe('AUTHENTICATION_ERROR');
+    expect(err.statusCode).toBe(401);
+  });
+
+  it('forwards AuthenticationError when Bearer token is invalid', async () => {
+    mockGetUser.mockResolvedValue({
+      data: { user: null },
+      error: { message: 'invalid token' },
+    });
+    const req = createMockRequest('Bearer expired-token') as Request;
+    const { res, next } = createCallables();
+
+    await requireAuth(req as any, res, next as NextFunction);
+
+    const err = (next as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(err).toBeInstanceOf(AuthenticationError);
+  });
+
+  it('forwards AuthenticationError when prefix is malformed (Basic instead of Bearer)', async () => {
+    const req = createMockRequest('Basic abc123') as Request;
+    const { res, next } = createCallables();
+
+    await requireAuth(req as any, res, next as NextFunction);
+
+    const err = (next as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(err).toBeInstanceOf(AuthenticationError);
+    expect(mockGetUser).not.toHaveBeenCalled();
+  });
+
+  it('forwards AuthenticationError when supabaseAdmin is unavailable', async () => {
+    mockSupabaseAdmin = null;
+    const req = createMockRequest('Bearer some-token') as Request;
+    const { res, next } = createCallables();
+
+    await requireAuth(req as any, res, next as NextFunction);
+
+    const err = (next as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(err).toBeInstanceOf(AuthenticationError);
   });
 });

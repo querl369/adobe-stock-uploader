@@ -79,6 +79,20 @@ describe('Upload Routes - Story 2.1', () => {
       expect(response.body.message).toContain('Successfully uploaded');
     });
 
+    it('beta-deployment T10: anonymous POST without Authorization header still returns 200 (b1 carve-out)', async () => {
+      // Regression guard: requireAuth was added across most endpoints during the
+      // Railway-beta hardening, but /api/upload-images intentionally stays public
+      // so users can drop files BEFORE signing up. If this ever 401s, the
+      // drop-then-signup UX is broken.
+      const response = await request(app)
+        .post('/api/upload-images')
+        .attach('images', testImagePath);
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.headers['set-cookie']?.[0]).toMatch(/session_id=/);
+    });
+
     it('AC3: anonymous accepts up to 10 images', async () => {
       const req = request(app).post('/api/upload-images');
 

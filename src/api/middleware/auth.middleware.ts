@@ -9,6 +9,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { supabaseAdmin } from '../../lib/supabase';
 import { logger } from '../../utils/logger';
+import { AuthenticationError } from '../../models/errors';
 import type { SessionRequest } from './session.middleware';
 
 export interface AuthAwareRequest extends SessionRequest {
@@ -69,4 +70,28 @@ export async function attachUserIdMiddleware(
     req.userId = null;
   }
   next();
+}
+
+/**
+ * Strict auth gate. Forwards AuthenticationError to the error handler when
+ * the request lacks a valid Supabase JWT, otherwise sets req.userId and
+ * passes to the next handler. Use on endpoints that must not run for
+ * anonymous callers (metadata generation, history, usage, CSV download).
+ */
+export async function requireAuth(
+  req: AuthAwareRequest,
+  _res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const userId = await extractUserId(req);
+    if (!userId) {
+      next(new AuthenticationError('Sign up or log in to continue'));
+      return;
+    }
+    req.userId = userId;
+    next();
+  } catch (error) {
+    next(error);
+  }
 }

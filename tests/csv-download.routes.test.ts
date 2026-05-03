@@ -127,10 +127,27 @@ vi.mock('../src/lib/supabase', () => ({
   },
 }));
 
-// Story 6.8: Configurable extractUserId mock
+// Story 6.8 + beta-deployment: Configurable extractUserId mock + requireAuth
+// stub. requireAuth delegates to mockExtractUserId so per-test calls of
+// `mockExtractUserId.mockResolvedValue(...)` drive both the legacy
+// extractUserId fallback path AND the new strict requireAuth middleware.
 const mockExtractUserId = vi.fn().mockResolvedValue(null);
 vi.mock('../src/api/middleware/auth.middleware', () => ({
   extractUserId: (...args: any[]) => mockExtractUserId(...args),
+  requireAuth: vi.fn(async (req: any, _res: any, next: any) => {
+    try {
+      const userId = await mockExtractUserId(req);
+      if (!userId) {
+        const { AuthenticationError } = await import('../src/models/errors');
+        next(new AuthenticationError('Sign up or log in to continue'));
+        return;
+      }
+      req.userId = userId;
+      next();
+    } catch (e) {
+      next(e);
+    }
+  }),
 }));
 
 // Mock session service (needed by session middleware)
@@ -174,7 +191,10 @@ describe('CSV Download Route - GET /api/download-csv/:batchId', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     supabaseAdminValue = null;
-    mockExtractUserId.mockResolvedValue(null);
+    // Default = authenticated. requireAuth (mounted on /download-csv after T3)
+    // would 401 every test if default were anonymous. Tests that need 401 use
+    // mockExtractUserId.mockResolvedValueOnce(null).
+    mockExtractUserId.mockResolvedValue('mock-user-default');
     app = express();
     app.use(express.json());
     app.use('/api', csvRoutes);
@@ -510,6 +530,16 @@ describe('CSV Download Route - GET /api/download-csv/:batchId', () => {
     });
   });
 
+  describe('beta-deployment T9: requireAuth gates /download-csv', () => {
+    it('returns 401 when no JWT provided', async () => {
+      mockExtractUserId.mockResolvedValueOnce(null);
+
+      const response = await request(app).get(`/api/download-csv/${VALID_BATCH_ID}`).expect(401);
+
+      expect(response.body.error.code).toBe('AUTHENTICATION_ERROR');
+    });
+  });
+
   describe('Story 6.8: Auth-Based Ownership Fallback', () => {
     beforeEach(() => {
       // Create a real temp CSV file for download tests
@@ -585,8 +615,9 @@ describe('CSV Download Route - GET /api/download-csv/:batchId', () => {
       expect(response.body.error.message).toBe('Batch not found');
     });
 
-    it('should return 404 when no auth token and session mismatch', async () => {
-      // Batch exists but different session, no auth token
+    it('beta-deployment T3: anonymous caller is rejected with 401 by requireAuth', async () => {
+      // Previously this returned 404 when session mismatched; the requireAuth
+      // gate now blocks anonymous callers earlier with 401.
       mockGetBatch.mockReturnValue(null);
       mockPersistenceService.isAvailable = true;
       mockPersistenceGetBatchById.mockReturnValue({
@@ -597,22 +628,23 @@ describe('CSV Download Route - GET /api/download-csv/:batchId', () => {
         expires_at: new Date(Date.now() + 86400000).toISOString(),
       });
 
-      // No auth token — extractUserId returns null
-      mockExtractUserId.mockResolvedValue(null);
+      mockExtractUserId.mockResolvedValueOnce(null);
 
-      const response = await request(app).get(`/api/download-csv/${VALID_BATCH_ID}`).expect(404);
-      expect(response.body.error.message).toBe('Batch not found');
+      const response = await request(app).get(`/api/download-csv/${VALID_BATCH_ID}`).expect(401);
+      expect(response.body.error.code).toBe('AUTHENTICATION_ERROR');
     });
 
-    it('should still use session-based check first (auth is fallback only)', async () => {
-      // Batch matches current session — should succeed without auth check
+    it('session-based check still runs first when sessions match (auth-based check skipped)', async () => {
+      // Batch matches current session — auth-based fallback path is NOT entered.
+      // requireAuth still calls extractUserId once at the middleware level.
       const batch = createMockBatch();
       mockGetBatch.mockReturnValue(batch);
 
       const response = await request(app).get(`/api/download-csv/${VALID_BATCH_ID}`).expect(200);
 
-      // extractUserId should NOT have been called (session matched)
-      expect(mockExtractUserId).not.toHaveBeenCalled();
+      // extractUserId is called exactly once (by requireAuth), not a second
+      // time inside the route handler since the session matched.
+      expect(mockExtractUserId).toHaveBeenCalledTimes(1);
     });
   });
 });

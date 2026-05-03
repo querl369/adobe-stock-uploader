@@ -7,10 +7,8 @@
  */
 
 import express, { Response, Router } from 'express';
-import type { Request } from 'express';
 import { asyncHandler } from '../middleware/error-handler';
-import { extractUserId } from '../middleware/auth.middleware';
-import { AuthenticationError } from '../../models/errors';
+import { requireAuth, AuthAwareRequest } from '../middleware/auth.middleware';
 import { services } from '../../config/container';
 
 const router: Router = express.Router();
@@ -21,12 +19,9 @@ const router: Router = express.Router();
  */
 router.get(
   '/usage',
-  asyncHandler(async (req: Request, res: Response) => {
-    const userId = await extractUserId(req);
-
-    if (!userId) {
-      throw new AuthenticationError('Authentication required');
-    }
+  requireAuth,
+  asyncHandler(async (req: AuthAwareRequest, res: Response) => {
+    const userId = req.userId!;
 
     const { used, limit, remaining, resetsAt } = await services.usageTracking.getUsage(userId);
 

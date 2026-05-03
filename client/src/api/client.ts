@@ -110,7 +110,10 @@ export async function startBatchProcessing(fileIds: string[]): Promise<BatchStar
 }
 
 export async function getBatchStatus(batchId: string): Promise<BatchStatusResponse> {
-  const response = await safeFetch(`/api/batch-status/${batchId}`);
+  const response = await safeFetch(`/api/batch-status/${batchId}`, {
+    headers: await authHeaders(),
+    credentials: 'include',
+  });
   return handleResponse<BatchStatusResponse>(response);
 }
 
@@ -149,7 +152,11 @@ export async function persistCsvToServer(
 export async function getBatches(options?: {
   signal?: AbortSignal;
 }): Promise<BatchHistoryResponse> {
-  const response = await safeFetch('/api/batches', { signal: options?.signal });
+  const response = await safeFetch('/api/batches', {
+    signal: options?.signal,
+    headers: await authHeaders(),
+    credentials: 'include',
+  });
   return handleResponse<BatchHistoryResponse>(response);
 }
 

@@ -20,7 +20,7 @@ import { recordCsvDownload } from '../../utils/metrics';
 import { services } from '../../config/container';
 import { CSV_OUTPUT_DIR } from '../../services/csv-export.service';
 import { batchTrackingService } from '../../services/batch-tracking.service';
-import { extractUserId } from '../middleware/auth.middleware';
+import { requireAuth, AuthAwareRequest } from '../middleware/auth.middleware';
 import { supabaseAdmin } from '../../lib/supabase';
 import type { Metadata } from '../../models/metadata.model';
 
@@ -59,8 +59,10 @@ interface GenerateCsvRequest {
 router.post(
   '/generate-csv',
   ipRateLimitMiddleware,
-  asyncHandler(async (req: express.Request, res: Response) => {
+  requireAuth,
+  asyncHandler(async (req: AuthAwareRequest, res: Response) => {
     const { metadataList, batchId } = req.body as GenerateCsvRequest;
+    const userId = req.userId!;
 
     // AC7: Validate input - return user-friendly error for empty batch
     if (!metadataList || !Array.isArray(metadataList) || metadataList.length === 0) {
@@ -104,8 +106,33 @@ router.post(
 
     const relativeCsvPath = `csv_output/${csvFileName}`;
 
-    // AC5: Associate CSV file with batch record (if batchId provided)
+    // AC5: Associate CSV file with batch record (if batchId provided).
+    // Verify the caller owns the batch before re-pointing its CSV — otherwise
+    // any authenticated user could overwrite another user's csv association by
+    // posting their batchId. Symmetric to the ownership check on
+    // /api/download-csv/:batchId. Use NotFoundError (not 403) to avoid leaking
+    // existence of foreign batchIds.
     if (batchId) {
+      let batchUserId: string | null | undefined;
+
+      const memBatch = batchTrackingService.getBatch(batchId);
+      if (memBatch) {
+        batchUserId = memBatch.userId;
+      } else if (services.batchPersistence.isAvailable) {
+        const dbBatch = services.batchPersistence.getBatchById(batchId);
+        if (dbBatch) {
+          batchUserId = dbBatch.user_id;
+        }
+      }
+
+      if (batchUserId !== userId) {
+        logger.warn(
+          { batchId, userId, ownerUserId: batchUserId },
+          'Unauthorized CSV association blocked'
+        );
+        throw new NotFoundError('Batch not found');
+      }
+
       batchTrackingService.associateCsv(batchId, relativeCsvPath, csvFileName);
     }
 
@@ -137,9 +164,11 @@ router.get(
   '/download-csv/:batchId',
   ipRateLimitMiddleware,
   sessionMiddleware,
-  asyncHandler(async (req: SessionRequest, res: Response) => {
+  requireAuth,
+  asyncHandler(async (req: AuthAwareRequest, res: Response) => {
     const { batchId } = req.params;
     const sessionId = req.sessionId;
+    const userId = req.userId!;
 
     if (!sessionId) {
       throw new NotFoundError('Batch not found');
@@ -177,13 +206,14 @@ router.get(
       throw new NotFoundError('Batch not found');
     }
 
-    // AC2: Session ownership check — return 404 (not 403) to prevent enumeration
-    // Story 6.8: If session mismatch, try auth-based ownership as fallback
+    // AC2: Session ownership check — return 404 (not 403) to prevent enumeration.
+    // beta-deployment T3: requireAuth guarantees userId is set; the conditional
+    // ownership-fallback is now unconditional. (Previously this block was skipped
+    // when userId === null, which let anonymous callers download any batch.)
     if (batchSessionId !== sessionId) {
       let authOwned = false;
 
-      const userId = await extractUserId(req);
-      if (userId && supabaseAdmin) {
+      if (supabaseAdmin) {
         const { data } = await supabaseAdmin
           .from('processing_batches')
           .select('user_id')

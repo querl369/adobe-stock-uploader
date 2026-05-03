@@ -12,19 +12,14 @@ import path from 'path';
 import fs from 'fs';
 import { asyncHandler } from '../middleware/error-handler';
 import { ipRateLimitMiddleware } from '../middleware/rate-limit.middleware';
-import {
-  ValidationError,
-  NotFoundError,
-  RateLimitError,
-  AuthenticationError,
-} from '../../models/errors';
+import { ValidationError, NotFoundError, RateLimitError } from '../../models/errors';
 import { logger } from '../../utils/logger';
 import { config } from '../../config/app.config';
 import { sessionMiddleware, SessionRequest } from '../middleware/session.middleware';
 import { batchTrackingService } from '../../services/batch-tracking.service';
 import { CSV_OUTPUT_DIR } from '../../services/csv-export.service';
 import { services } from '../../config/container';
-import { extractUserId } from '../middleware/auth.middleware';
+import { requireAuth, AuthAwareRequest } from '../middleware/auth.middleware';
 import type { ProcessBatchRequest } from '../../models/batch.model';
 import type { BatchRow } from '../../services/batch-persistence.service';
 
@@ -67,6 +62,7 @@ function mapBatchRowToResponse(row: BatchRow) {
 router.get(
   '/batch-status/:batchId',
   sessionMiddleware,
+  requireAuth,
   asyncHandler(async (req: SessionRequest, res: Response) => {
     const { batchId } = req.params;
     const sessionId = req.sessionId!;
@@ -117,19 +113,15 @@ router.get(
 router.post(
   '/process-batch-v2',
   sessionMiddleware,
-  asyncHandler(async (req: SessionRequest, res: Response) => {
+  requireAuth,
+  asyncHandler(async (req: AuthAwareRequest, res: Response) => {
     const sessionId = req.sessionId!;
+    const userId = req.userId!;
     const { fileIds } = req.body as ProcessBatchRequest;
 
     // Validate request
     if (!fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
       throw new ValidationError('fileIds array is required and must not be empty');
-    }
-
-    // Story 6.9: Auth is required for batch processing
-    const userId = await extractUserId(req);
-    if (!userId) {
-      throw new AuthenticationError('Sign up or log in to generate metadata');
     }
 
     const maxBatch = config.rateLimits.authBatchMax;
@@ -350,6 +342,7 @@ router.get(
   '/batches',
   ipRateLimitMiddleware,
   sessionMiddleware,
+  requireAuth,
   asyncHandler(async (req: SessionRequest, res: Response) => {
     const sessionId = req.sessionId!;
     const persistenceService = services.batchPersistence;
@@ -376,6 +369,7 @@ router.get(
   '/batches/:batchId',
   ipRateLimitMiddleware,
   sessionMiddleware,
+  requireAuth,
   asyncHandler(async (req: SessionRequest, res: Response) => {
     const { batchId } = req.params;
     const sessionId = req.sessionId!;

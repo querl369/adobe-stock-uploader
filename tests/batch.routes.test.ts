@@ -70,10 +70,31 @@ vi.mock('../src/lib/supabase', () => ({
   supabaseAdmin: null,
 }));
 
-// Story 6.8: Mock auth middleware to avoid async leaks in parallel test runs
-vi.mock('../src/api/middleware/auth.middleware', () => ({
-  extractUserId: vi.fn().mockResolvedValue(null),
-}));
+// Story 6.8 + beta-deployment: Mock auth middleware. requireAuth delegates to
+// the mocked extractUserId so existing tests that drive auth state via
+// `vi.mocked(extractUserId).mockResolvedValueOnce(...)` continue to work.
+vi.mock('../src/api/middleware/auth.middleware', () => {
+  // Default = authenticated. Existing tests that don't care about auth (e.g. session
+  // ownership, validation) just work; tests that need 401 use mockResolvedValueOnce(null).
+  const mockExtractUserId = vi.fn().mockResolvedValue('mock-user-id');
+  return {
+    extractUserId: mockExtractUserId,
+    requireAuth: vi.fn(async (req: any, _res: any, next: any) => {
+      try {
+        const userId = await mockExtractUserId(req);
+        if (!userId) {
+          const { AuthenticationError } = await import('../src/models/errors');
+          next(new AuthenticationError('Sign up or log in to continue'));
+          return;
+        }
+        req.userId = userId;
+        next();
+      } catch (e) {
+        next(e);
+      }
+    }),
+  };
+});
 
 describe('Batch Routes - Story 2.6', () => {
   let app: Express;
@@ -377,6 +398,7 @@ describe('Batch Routes - Story 2.6', () => {
     it('anonymous user gets 401 before file count check', async () => {
       // Regression guard for the auth-first ordering. Sending 101 fileIds with
       // no auth should surface the auth error, not "Maximum 100 files".
+      vi.mocked(extractUserId).mockResolvedValueOnce(null);
       const sessionId = sessionService.createSession();
       const fileIds = Array.from({ length: 101 }, (_, i) => `file-${i}`);
 
@@ -406,8 +428,8 @@ describe('Batch Routes - Story 2.6', () => {
 
   describe('Story 6.9: Auth & Quota Enforcement', () => {
     it('should return 401 when no JWT provided (anonymous blocked)', async () => {
+      vi.mocked(extractUserId).mockResolvedValueOnce(null);
       const sessionId = sessionService.createSession();
-      // extractUserId returns null by default (mock)
 
       const response = await request(app)
         .post('/api/process-batch-v2')
@@ -417,7 +439,7 @@ describe('Batch Routes - Story 2.6', () => {
 
       expect(response.body.success).toBe(false);
       expect(response.body.error.code).toBe('AUTHENTICATION_ERROR');
-      expect(response.body.error.message).toBe('Sign up or log in to generate metadata');
+      expect(response.body.error.message).toBe('Sign up or log in to continue');
     });
 
     it('should return 429 when quota exceeded', async () => {
@@ -463,6 +485,44 @@ describe('Batch Routes - Story 2.6', () => {
         .expect(200);
 
       expect(response2.body.batchId).toBe(batch.batchId);
+    });
+  });
+
+  describe('beta-deployment T9: requireAuth gates protected routes', () => {
+    it('GET /api/batch-status/:id returns 401 when unauthenticated', async () => {
+      vi.mocked(extractUserId).mockResolvedValueOnce(null);
+      const sessionId = sessionService.createSession();
+
+      const response = await request(app)
+        .get('/api/batch-status/00000000-0000-4000-8000-000000000000')
+        .set('Cookie', `session_id=${sessionId}`)
+        .expect(401);
+
+      expect(response.body.error.code).toBe('AUTHENTICATION_ERROR');
+    });
+
+    it('GET /api/batches returns 401 when unauthenticated', async () => {
+      vi.mocked(extractUserId).mockResolvedValueOnce(null);
+      const sessionId = sessionService.createSession();
+
+      const response = await request(app)
+        .get('/api/batches')
+        .set('Cookie', `session_id=${sessionId}`)
+        .expect(401);
+
+      expect(response.body.error.code).toBe('AUTHENTICATION_ERROR');
+    });
+
+    it('GET /api/batches/:id returns 401 when unauthenticated', async () => {
+      vi.mocked(extractUserId).mockResolvedValueOnce(null);
+      const sessionId = sessionService.createSession();
+
+      const response = await request(app)
+        .get('/api/batches/00000000-0000-4000-8000-000000000000')
+        .set('Cookie', `session_id=${sessionId}`)
+        .expect(401);
+
+      expect(response.body.error.code).toBe('AUTHENTICATION_ERROR');
     });
   });
 

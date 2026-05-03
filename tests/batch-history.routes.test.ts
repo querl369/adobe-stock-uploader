@@ -69,6 +69,29 @@ vi.mock('../src/lib/supabase', () => ({
   supabaseAdmin: null,
 }));
 
+// beta-deployment T2: /api/batches and /api/batches/:id are now requireAuth-gated.
+// Default = authenticated; per-test mockResolvedValueOnce(null) simulates 401.
+const { mockExtractUserId } = vi.hoisted(() => ({
+  mockExtractUserId: vi.fn().mockResolvedValue('mock-user-id'),
+}));
+vi.mock('../src/api/middleware/auth.middleware', () => ({
+  extractUserId: mockExtractUserId,
+  requireAuth: vi.fn(async (req: any, _res: any, next: any) => {
+    try {
+      const userId = await mockExtractUserId(req);
+      if (!userId) {
+        const { AuthenticationError } = await import('../src/models/errors');
+        next(new AuthenticationError('Sign up or log in to continue'));
+        return;
+      }
+      req.userId = userId;
+      next();
+    } catch (e) {
+      next(e);
+    }
+  }),
+}));
+
 // Create mock persistence service (hoisted so vi.mock factory can reference them)
 const {
   mockGetBatchesBySessionDb,

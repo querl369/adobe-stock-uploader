@@ -31,13 +31,19 @@ vi.mock('../src/config/container', () => ({
       generateCSV: vi.fn().mockResolvedValue(undefined),
       validateMetadataList: vi.fn().mockReturnValue({ valid: true, invalidItems: [] }),
     },
+    batchPersistence: {
+      isAvailable: false,
+      getBatchById: vi.fn(),
+    },
   },
 }));
 
-// Mock batch tracking service
+// Mock batch tracking service. Default getBatch returns a batch owned by the
+// default mocked userId so the new /generate-csv ownership check passes.
 vi.mock('../src/services/batch-tracking.service', () => ({
   batchTrackingService: {
     associateCsv: vi.fn(),
+    getBatch: vi.fn().mockReturnValue({ userId: 'mock-user-id' }),
   },
 }));
 
@@ -59,6 +65,30 @@ vi.mock('../src/utils/logger', () => ({
 // Story 6.8: Mock supabase admin client (auth.middleware.ts + csv.routes.ts dependency)
 vi.mock('../src/lib/supabase', () => ({
   supabaseAdmin: null,
+}));
+
+// beta-deployment: Mock auth middleware. Default = pass-through with synthetic
+// userId. Per-test override `vi.mocked(requireAuth).mockImplementationOnce(...)`
+// can simulate unauthenticated callers (401 path).
+const { mockExtractUserId } = vi.hoisted(() => ({
+  mockExtractUserId: vi.fn().mockResolvedValue('mock-user-id'),
+}));
+vi.mock('../src/api/middleware/auth.middleware', () => ({
+  extractUserId: mockExtractUserId,
+  requireAuth: vi.fn(async (req: any, _res: any, next: any) => {
+    try {
+      const userId = await mockExtractUserId(req);
+      if (!userId) {
+        const { AuthenticationError } = await import('../src/models/errors');
+        next(new AuthenticationError('Sign up or log in to continue'));
+        return;
+      }
+      req.userId = userId;
+      next();
+    } catch (e) {
+      next(e);
+    }
+  }),
 }));
 
 describe('CSV Routes - POST /api/generate-csv', () => {
@@ -331,6 +361,78 @@ describe('CSV Routes - POST /api/generate-csv', () => {
         .expect(200);
 
       expect(batchTrackingService.associateCsv).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 and skips associateCsv when caller does not own the batch (memory)', async () => {
+      const { batchTrackingService } = await import('../src/services/batch-tracking.service');
+      vi.mocked(batchTrackingService.getBatch).mockReturnValueOnce({
+        userId: 'someone-else',
+      } as any);
+
+      const response = await request(app)
+        .post('/api/generate-csv')
+        .send({ metadataList: validMetadataList, batchId: 'foreign-batch' })
+        .expect(404);
+
+      expect(response.body.error.code).toBe('NOT_FOUND');
+      expect(batchTrackingService.associateCsv).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when batch is not in memory and DB ownership lookup mismatches', async () => {
+      const { batchTrackingService } = await import('../src/services/batch-tracking.service');
+      const { services } = await import('../src/config/container');
+      vi.mocked(batchTrackingService.getBatch).mockReturnValueOnce(null);
+      (services.batchPersistence as any).isAvailable = true;
+      vi.mocked(services.batchPersistence.getBatchById).mockReturnValueOnce({
+        user_id: 'someone-else',
+      } as any);
+
+      await request(app)
+        .post('/api/generate-csv')
+        .send({ metadataList: validMetadataList, batchId: 'evicted-batch' })
+        .expect(404);
+
+      expect(batchTrackingService.associateCsv).not.toHaveBeenCalled();
+
+      (services.batchPersistence as any).isAvailable = false;
+    });
+
+    it('returns 404 when batchId is unknown to both memory and DB', async () => {
+      const { batchTrackingService } = await import('../src/services/batch-tracking.service');
+      vi.mocked(batchTrackingService.getBatch).mockReturnValueOnce(null);
+
+      await request(app)
+        .post('/api/generate-csv')
+        .send({ metadataList: validMetadataList, batchId: 'never-existed' })
+        .expect(404);
+
+      expect(batchTrackingService.associateCsv).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('beta-deployment T9: requireAuth gates /generate-csv', () => {
+    it('returns 401 when no JWT provided', async () => {
+      vi.mocked(mockExtractUserId).mockResolvedValueOnce(null);
+
+      const response = await request(app)
+        .post('/api/generate-csv')
+        .send({ metadataList: validMetadataList })
+        .expect(401);
+
+      expect(response.body.success).toBe(false);
+      expect(response.body.error.code).toBe('AUTHENTICATION_ERROR');
+    });
+
+    it('does not call csvExport.generateCSV on unauth', async () => {
+      vi.mocked(mockExtractUserId).mockResolvedValueOnce(null);
+      const { services } = await import('../src/config/container');
+
+      await request(app)
+        .post('/api/generate-csv')
+        .send({ metadataList: validMetadataList })
+        .expect(401);
+
+      expect(services.csvExport.generateCSV).not.toHaveBeenCalled();
     });
   });
 
