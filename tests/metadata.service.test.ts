@@ -74,7 +74,9 @@ function createValidTestMetadata(
 ) {
   const defaultTitle =
     'A beautiful professional stock photograph of nature landscape with mountains and sunset';
-  const defaultKeywords = Array.from({ length: 35 }, (_, i) => `keyword${i + 1}`);
+  // Default keyword count matches KEYWORDS_TARGET (49) so test metadata clears
+  // the below-target retry threshold and tests don't trigger an unintended 2nd call.
+  const defaultKeywords = Array.from({ length: 49 }, (_, i) => `keyword${i + 1}`);
   return {
     title: overrides.title ?? defaultTitle,
     keywords: overrides.keywords ?? defaultKeywords,
@@ -567,6 +569,92 @@ describe('MetadataService', () => {
       // Should mention both title and keyword issues
       expect(promptContent).toContain('TOO SHORT');
       expect(promptContent).toContain('keywords');
+    });
+
+    it('should retry once when first response is valid but below 45 keyword threshold', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+
+      // First: valid but only 35 keywords (≥30 so passes validation, <45 so triggers below-target retry)
+      const belowTargetMetadata = {
+        title:
+          'A beautiful professional stock photograph of nature landscape with mountains and sunset',
+        keywords: Array.from({ length: 35 }, (_, i) => `belowtarget${i + 1}`),
+        category: 11,
+      };
+
+      // Second: 48 keywords — closer to target
+      const onTargetMetadata = {
+        title:
+          'A beautiful professional stock photograph of nature landscape with mountains and sunset',
+        keywords: Array.from({ length: 48 }, (_, i) => `ontarget${i + 1}`),
+        category: 11,
+      };
+
+      mockOpenAI.chat.completions.create
+        .mockResolvedValueOnce({
+          choices: [{ message: { content: JSON.stringify(belowTargetMetadata) } }],
+        })
+        .mockResolvedValueOnce({
+          choices: [{ message: { content: JSON.stringify(onTargetMetadata) } }],
+        });
+
+      const result = await service.generateMetadata(imageUrl);
+
+      // Retry should have happened
+      expect(mockOpenAI.chat.completions.create).toHaveBeenCalledTimes(2);
+      // Returns the retry result (48 keywords)
+      expect(result.keywords.length).toBe(48);
+      expect(result.keywords[0]).toBe('ontarget1');
+
+      // Adjusted prompt should mention the below-target feedback
+      const secondCallArgs = mockOpenAI.chat.completions.create.mock.calls[1][0];
+      const promptContent = secondCallArgs.messages[0].content[0].text;
+      expect(promptContent).toContain('TARGET');
+      expect(promptContent).toContain('49');
+    });
+
+    it('should keep first result when below-target retry also undershoots but is Adobe-valid', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+
+      // Both responses valid but below target — same payload returned twice
+      const belowTargetMetadata = {
+        title:
+          'A beautiful professional stock photograph of nature landscape with mountains and sunset',
+        keywords: Array.from({ length: 32 }, (_, i) => `kw${i + 1}`),
+        category: 11,
+      };
+
+      mockOpenAI.chat.completions.create.mockResolvedValue({
+        choices: [{ message: { content: JSON.stringify(belowTargetMetadata) } }],
+      });
+
+      const result = await service.generateMetadata(imageUrl);
+
+      // Retry happened
+      expect(mockOpenAI.chat.completions.create).toHaveBeenCalledTimes(2);
+      // Result is Adobe-valid (≥30 keywords) — no fallback
+      expect(result.keywords.length).toBe(32);
+      expect(result.title).toBe(belowTargetMetadata.title);
+    });
+
+    it('should NOT retry when first response is at or above 45 keyword threshold', async () => {
+      const imageUrl = 'https://example.com/image.jpg';
+
+      const atThresholdMetadata = {
+        title:
+          'A beautiful professional stock photograph of nature landscape with mountains and sunset',
+        keywords: Array.from({ length: 45 }, (_, i) => `kw${i + 1}`),
+        category: 11,
+      };
+
+      mockOpenAI.chat.completions.create.mockResolvedValue({
+        choices: [{ message: { content: JSON.stringify(atThresholdMetadata) } }],
+      });
+
+      const result = await service.generateMetadata(imageUrl);
+
+      expect(mockOpenAI.chat.completions.create).toHaveBeenCalledTimes(1);
+      expect(result.keywords.length).toBe(45);
     });
   });
 

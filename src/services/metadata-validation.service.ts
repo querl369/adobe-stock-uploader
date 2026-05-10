@@ -21,6 +21,12 @@ export const TITLE_MIN_LENGTH = 50;
 export const TITLE_MAX_LENGTH = 200;
 export const KEYWORDS_MIN_COUNT = 30;
 export const KEYWORDS_MAX_COUNT = 50;
+/**
+ * Target keyword count: aim for 49 (just under Adobe's 50-keyword cap) so listings
+ * have maximum search coverage without ever overshooting. Sanitize() truncates to this
+ * value when AI returns more, keeping only the most relevant keywords (AI returns ordered).
+ */
+export const KEYWORDS_TARGET = 49;
 export const KEYWORD_MAX_LENGTH = 50;
 // CR-003 Note: Global flag is needed for .replace() to replace ALL commas.
 // The original CR-003 issue was about using /g with .test() method which maintains
@@ -263,6 +269,12 @@ export class MetadataValidationService {
         seenKeywords.add(lowerKeyword);
         return true;
       });
+
+      // Truncate to target. AI returns keywords ordered by relevance, so slicing
+      // keeps the strongest 49 and drops the weakest tail.
+      if (keywords.length > KEYWORDS_TARGET) {
+        keywords = keywords.slice(0, KEYWORDS_TARGET);
+      }
     }
 
     // Normalize category to numeric ID (AC4)
@@ -400,7 +412,7 @@ export class MetadataValidationService {
       errors.push({
         field: 'keywords',
         code: ValidationErrorCode.KEYWORDS_TOO_FEW,
-        message: `At least ${KEYWORDS_MIN_COUNT} keywords required (got ${keywords.length})`,
+        message: `Target is ${KEYWORDS_TARGET} keywords (Adobe minimum ${KEYWORDS_MIN_COUNT}); got ${keywords.length}`,
         value: keywords.length,
       });
     }

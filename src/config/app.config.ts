@@ -13,7 +13,11 @@ const envObjectSchema = z.object({
   // OpenAI
   OPENAI_API_KEY: z.string().min(20, 'OpenAI API key is required'),
   OPENAI_MODEL: z.string().default('gpt-5-nano'),
-  OPENAI_MAX_TOKENS: z.coerce.number().default(1000),
+  // gpt-5-nano counts internal reasoning tokens against max_completion_tokens.
+  // 1000 was insufficient once the prompt grew to demand ~49 keywords plus
+  // explicit repetition checking — the model exhausted the cap on reasoning
+  // before producing any output (finish_reason="length", empty content).
+  OPENAI_MAX_TOKENS: z.coerce.number().default(4000),
   OPENAI_TEMPERATURE: z.coerce.number().default(0.3),
   OPENAI_TIMEOUT_MS: z.coerce.number().default(30000),
 

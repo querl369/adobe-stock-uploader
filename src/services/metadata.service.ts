@@ -32,10 +32,21 @@ import { getUserFriendlyErrorMessage, createErrorContext } from '@/utils/error-m
 import type { RawAIMetadata } from '@/models/metadata.model';
 import { rawAIMetadataSchema } from '@/models/metadata.model';
 import type { CategoryService } from '@/services/category.service';
+import { KEYWORDS_TARGET, ValidationErrorCode } from '@/services/metadata-validation.service';
 import type {
   MetadataValidationService,
   ValidationError,
 } from '@/services/metadata-validation.service';
+
+/**
+ * Below-target retry threshold for keyword count.
+ *
+ * If first OpenAI response yields valid metadata (≥30 keywords) but fewer than
+ * KEYWORDS_RETRY_THRESHOLD, we re-call OpenAI once with a "produce more keywords"
+ * adjusted prompt. The retry result is accepted even if still below this threshold,
+ * as long as it passes Adobe's minimum (30) — partial improvement beats fallback.
+ */
+const KEYWORDS_RETRY_THRESHOLD = 45;
 
 /**
  * Service for generating image metadata using AI
@@ -86,13 +97,66 @@ export class MetadataService {
       const firstValidation = this.validationService.validate(firstParsed);
 
       if (firstValidation.valid && firstValidation.sanitizedMetadata) {
-        logger.debug(
+        const firstCount = firstValidation.sanitizedMetadata.keywords.length;
+
+        if (firstCount >= KEYWORDS_RETRY_THRESHOLD) {
+          logger.debug(
+            {
+              fileId: effectiveFileId,
+              titleLength: firstValidation.sanitizedMetadata.title.length,
+              keywordCount: firstCount,
+            },
+            'Metadata validated on first attempt'
+          );
+          return firstValidation.sanitizedMetadata;
+        }
+
+        // Valid but below target: synthesize a TOO_FEW error and retry once
+        // for better keyword coverage. If retry undershoots too, accept it
+        // (still Adobe-valid) — partial improvement beats fallback.
+        logger.info(
           {
             fileId: effectiveFileId,
-            titleLength: firstValidation.sanitizedMetadata.title.length,
-            keywordCount: firstValidation.sanitizedMetadata.keywords.length,
+            keywordCount: firstCount,
+            target: KEYWORDS_TARGET,
+            retryThreshold: KEYWORDS_RETRY_THRESHOLD,
           },
-          'Metadata validated on first attempt'
+          'Metadata valid but below target keyword count, retrying for more coverage'
+        );
+
+        const belowTargetErrors: ValidationError[] = [
+          {
+            field: 'keywords',
+            code: ValidationErrorCode.KEYWORDS_TOO_FEW,
+            message: `Below target: ${firstCount}/${KEYWORDS_TARGET}`,
+            value: firstCount,
+          },
+        ];
+        const targetPrompt = this.buildAdjustedPrompt(belowTargetErrors);
+        const targetResponse = await this.callOpenAI(imageUrl, targetPrompt);
+        const targetParsed = this.parseAIResponse(targetResponse);
+        const targetValidation = this.validationService.validate(targetParsed);
+
+        if (targetValidation.valid && targetValidation.sanitizedMetadata) {
+          logger.info(
+            {
+              fileId: effectiveFileId,
+              firstKeywordCount: firstCount,
+              retryKeywordCount: targetValidation.sanitizedMetadata.keywords.length,
+            },
+            'Below-target retry succeeded'
+          );
+          return targetValidation.sanitizedMetadata;
+        }
+
+        // Retry validation failed — keep the first (Adobe-valid) result
+        logger.warn(
+          {
+            fileId: effectiveFileId,
+            firstKeywordCount: firstCount,
+            retryErrors: targetValidation.errors.map(e => e.code),
+          },
+          'Below-target retry failed validation, keeping first result'
         );
         return firstValidation.sanitizedMetadata;
       }
@@ -186,6 +250,11 @@ export class MetadataService {
           const callStart = Date.now();
           logger.debug({ imageUrl, timeoutMs }, 'Starting OpenAI API call');
 
+          // gpt-5-nano (and other gpt-5 family) support reasoning_effort.
+          // Default ("medium") burns thousands of reasoning tokens on a prompt
+          // this size, exhausting max_completion_tokens before any visible
+          // output is produced. Metadata generation is direct enough that
+          // "minimal" reasoning works fine and keeps cost/latency low.
           const result = await this.openai.chat.completions.create(
             {
               model: config.openai.model,
@@ -209,6 +278,7 @@ export class MetadataService {
               ],
               max_completion_tokens: config.openai.maxTokens,
               temperature: config.openai.temperature,
+              reasoning_effort: 'minimal',
             },
             { signal: controller.signal }
           );
@@ -390,7 +460,7 @@ export class MetadataService {
           break;
         case 'KEYWORDS_TOO_FEW':
           errorFeedback.push(
-            `- You provided only ${error.value} keywords. You MUST provide at least 30 keywords. Add more relevant keywords.`
+            `- You provided only ${error.value} keywords. The TARGET is ${KEYWORDS_TARGET} keywords (Adobe accepts 30-50, aim near the 50 max). Add more diverse, NON-REPEATING keywords to reach ${KEYWORDS_TARGET}. Do NOT repeat any descriptor word — pull in distinct concepts (mood, use cases, technical descriptors, color, audience).`
           );
           break;
         case 'KEYWORDS_TOO_MANY':

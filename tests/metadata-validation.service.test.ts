@@ -23,6 +23,7 @@ import {
   TITLE_MAX_LENGTH,
   KEYWORDS_MIN_COUNT,
   KEYWORDS_MAX_COUNT,
+  KEYWORDS_TARGET,
   KEYWORD_MAX_LENGTH,
   FALLBACK_KEYWORDS,
   DEFAULT_FALLBACK_CATEGORY,
@@ -209,20 +210,23 @@ describe('MetadataValidationService', () => {
       );
     });
 
-    it('should reject if more than 50 keywords', () => {
+    it('should truncate to KEYWORDS_TARGET (49) when more keywords are provided', () => {
+      // Sanitize truncates first, so validation never sees >49 keywords.
+      // AI returns ordered by relevance — slicing keeps the strongest 49.
       const metadata = createValidMetadata({
-        keywords: Array.from({ length: 51 }, (_, i) => `keyword${i}`),
+        keywords: Array.from({ length: 60 }, (_, i) => `keyword${i}`),
       });
 
       const result = service.validate(metadata);
 
-      expect(result.valid).toBe(false);
-      expect(result.errors).toContainEqual(
-        expect.objectContaining({
-          field: 'keywords',
-          code: ValidationErrorCode.KEYWORDS_TOO_MANY,
-        })
+      expect(result.valid).toBe(true);
+      expect(result.sanitizedMetadata?.keywords.length).toBe(KEYWORDS_TARGET);
+      // First 49 (by index) preserved, 50+ dropped
+      expect(result.sanitizedMetadata?.keywords[0]).toBe('keyword0');
+      expect(result.sanitizedMetadata?.keywords[KEYWORDS_TARGET - 1]).toBe(
+        `keyword${KEYWORDS_TARGET - 1}`
       );
+      expect(result.sanitizedMetadata?.keywords).not.toContain(`keyword${KEYWORDS_TARGET}`);
     });
 
     it('should accept exactly 30 keywords', () => {
@@ -235,7 +239,7 @@ describe('MetadataValidationService', () => {
       expect(result.errors.filter(e => e.field === 'keywords')).toHaveLength(0);
     });
 
-    it('should accept exactly 50 keywords', () => {
+    it('should accept 50 keywords by truncating to 49', () => {
       const metadata = createValidMetadata({
         keywords: Array.from({ length: 50 }, (_, i) => `keyword${i}`),
       });
@@ -243,6 +247,19 @@ describe('MetadataValidationService', () => {
       const result = service.validate(metadata);
 
       expect(result.errors.filter(e => e.field === 'keywords')).toHaveLength(0);
+      // Sanitize truncates to KEYWORDS_TARGET (49)
+      expect(result.sanitizedMetadata?.keywords.length).toBe(KEYWORDS_TARGET);
+    });
+
+    it('should accept exactly KEYWORDS_TARGET (49) keywords without truncation', () => {
+      const metadata = createValidMetadata({
+        keywords: Array.from({ length: KEYWORDS_TARGET }, (_, i) => `keyword${i}`),
+      });
+
+      const result = service.validate(metadata);
+
+      expect(result.errors.filter(e => e.field === 'keywords')).toHaveLength(0);
+      expect(result.sanitizedMetadata?.keywords.length).toBe(KEYWORDS_TARGET);
     });
 
     it('should reject keywords exceeding 50 characters', () => {
@@ -821,15 +838,22 @@ describe('MetadataValidationService', () => {
       expect(recordMetadataValidationFailure).toHaveBeenCalledWith('keywords', 'KEYWORDS_TOO_FEW');
     });
 
-    it('should record validation failure metrics with correct field and error code for too many keywords', () => {
+    it('should NOT record TOO_MANY metric when over-limit keywords are silently truncated', () => {
+      // Sanitize truncates >49 to 49 before validate() runs, so KEYWORDS_TOO_MANY
+      // can no longer fire from normal flow. This test pins that contract.
       vi.clearAllMocks();
       const metadata = createValidMetadata({
         keywords: Array.from({ length: 55 }, (_, i) => `uniquekeyword${i}`),
       });
 
-      service.validate(metadata);
+      const result = service.validate(metadata);
 
-      expect(recordMetadataValidationFailure).toHaveBeenCalledWith('keywords', 'KEYWORDS_TOO_MANY');
+      expect(result.valid).toBe(true);
+      expect(result.sanitizedMetadata?.keywords.length).toBe(KEYWORDS_TARGET);
+      expect(recordMetadataValidationFailure).not.toHaveBeenCalledWith(
+        'keywords',
+        'KEYWORDS_TOO_MANY'
+      );
     });
 
     it('should record validation failure metrics with correct field and error code for long keyword', () => {
@@ -946,6 +970,9 @@ describe('MetadataValidationService', () => {
     it('should have correct keyword count constants', () => {
       expect(KEYWORDS_MIN_COUNT).toBe(30);
       expect(KEYWORDS_MAX_COUNT).toBe(50);
+      expect(KEYWORDS_TARGET).toBe(49);
+      expect(KEYWORDS_TARGET).toBeLessThan(KEYWORDS_MAX_COUNT);
+      expect(KEYWORDS_TARGET).toBeGreaterThan(KEYWORDS_MIN_COUNT);
     });
 
     it('should have correct keyword length constant', () => {
