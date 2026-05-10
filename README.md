@@ -275,15 +275,17 @@ Set on Railway under "Variables" (see `.env.example` for the full list):
 
 Do **not** set `PORT` — Railway injects it. Do **not** set `DB_PATH` — the default `data/batches.db` is fine for ephemeral beta usage.
 
-### Required build args (`VITE_*`)
+### Required build-time variables (`VITE_*`)
 
-Vite inlines `import.meta.env.VITE_*` into the bundle at build time. Railway runtime variables do **not** propagate to Docker builds — these must be set as **Build Args** on the Railway service:
+Vite inlines `import.meta.env.VITE_*` into the bundle at build time, so these must be present when `docker build` runs. Set them in the **Variables** tab of your Railway service:
 
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 - `VITE_FEATURE_PLANS_PAGE`
 
-If these are missing from the build, the SPA loads but Supabase client auth breaks at runtime (`undefined` URL).
+Railway auto-passes any variable whose name matches an `ARG` declaration in the Dockerfile through to the Docker build. The Dockerfile declares `ARG VITE_SUPABASE_URL` (and the other two), so placing them in Variables is enough — no separate Build Args section exists in the current Railway UI.
+
+If these are missing at build time, the SPA loads but Supabase client auth breaks at runtime (`undefined` URL).
 
 ### Trust proxy
 
@@ -299,10 +301,10 @@ Healthcheck timeout: 30s. Restart policy: on-failure, max 3 retries.
 
 ```bash
 docker build \
-  --build-arg VITE_SUPABASE_URL=$VITE_SUPABASE_URL \
-  --build-arg VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY \
-  --build-arg VITE_FEATURE_PLANS_PAGE=false \
-  -t adobe-stock-uploader:local .
+    --build-arg VITE_SUPABASE_URL=$(grep '^VITE_SUPABASE_URL=' .env | cut -d= -f2-) \
+    --build-arg VITE_SUPABASE_ANON_KEY=$(grep '^VITE_SUPABASE_ANON_KEY=' .env | cut -d= -f2-) \
+    --build-arg VITE_FEATURE_PLANS_PAGE=false \
+    -t adobe-stock-uploader:local .
 
 docker run --rm -p 3000:3000 --env-file .env adobe-stock-uploader:local
 ```

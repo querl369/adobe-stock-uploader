@@ -298,7 +298,7 @@ export function Home() {
               Images
             </h1>
             <p className="opacity-40 tracking-[-0.01em] text-[clamp(1rem,2vw,1.25rem)] max-w-xl mx-auto">
-              AI-powered descriptions, exported instantly
+              Descriptions, keywords, all in ready to upload Adobe-approved CSV format
             </p>
           </div>
 

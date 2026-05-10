@@ -48,11 +48,16 @@ There is no separate lint command. Formatting is handled by Prettier via lint-st
 - **`client/src/app.tsx`** — Thin orchestrator with DropZone, view state routing, and event handlers
 - **`client/src/components/`** — AppHeader, AppFooter, UploadView, ProcessingView, ResultsView
 - **`client/src/components/ui/`** — shadcn/ui component library (Radix-based, do NOT modify)
+- **`Input` validation:** `aria-invalid={!!error}` auto-triggers red border via built-in `aria-invalid:border-destructive` — no custom CSS needed for field errors
 - **`client/src/api/client.ts`** — Typed API client (uploadImages, startBatchProcessing, getBatchStatus, cleanup)
 - **`client/src/types/index.ts`** — Shared TypeScript interfaces
 - **`client/src/utils/csv.ts`** — CSV generation and download utilities
 - Built with Vite + React SWC plugin, Tailwind CSS v4 (`@tailwindcss/vite` plugin)
 - **Note:** The root `App.tsx` is a stale prototype — ignore it. The working app is `client/src/app.tsx`
+
+### Input Constraints
+
+`maxLength` does NOT prevent paste — enforce character constraints in `onChange`: `value.replace(/[^a-zA-Z]/g, '').slice(0, N).toUpperCase()`
 
 ### Tailwind CSS
 
@@ -67,7 +72,7 @@ Configured in both `tsconfig.json` and `vitest.config.ts`:
 
 - **playwright-cli** skill available at `.claude/skills/playwright-cli/` — use for visual verification, form testing, screenshots. For ngrok URLs, bypass interstitial with `playwright-cli run-code "async page => await page.setExtraHTTPHeaders({'ngrok-skip-browser-warning': 'true'})"`.
 - **Framework:** Vitest with `globals: true` (no explicit imports for `describe`, `it`, `expect`)
-- **All tests in** `tests/` directory, named `*.test.ts`
+- **All tests in** `tests/` directory. Backend tests: `*.test.ts`. Frontend component tests: `*.test.tsx` (use `// @vitest-environment jsdom` + `@testing-library/jest-dom/vitest` + `MemoryRouter` wrapper)
 - **Patterns:** Heavy `vi.mock()` for external deps (OpenAI, config, logger, fs). Lightweight services (CategoryService) used as real instances. Factory helpers like `createValidTestMetadata()` for test data
 - **Pre-commit hook** (Husky): runs full test suite, then lint-staged runs `vitest related` on changed files + Prettier
 

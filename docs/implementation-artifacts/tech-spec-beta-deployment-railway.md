@@ -396,13 +396,13 @@ Five small but operationally critical changes uncovered during adversarial revie
     - `TEMP_FILE_LIFETIME_SECONDS=10`
   - Notes: Do NOT set `PORT` — Railway injects it. Do NOT set `DB_PATH` — default `data/batches.db` is fine for ephemeral beta usage.
 
-- [ ] **Task 21: Set Railway BUILD args**
-  - File: (none — Railway dashboard, service settings)
-  - Action: Under "Build" / "Build Args" (or "Build Variables"), add:
-    - `VITE_SUPABASE_URL=<same as runtime>`
-    - `VITE_SUPABASE_ANON_KEY=<same as runtime>`
+- [ ] **Task 21: Set `VITE_*` build-time variables**
+  - File: (none — Railway dashboard, Variables tab)
+  - Action: In the **Variables** tab (same place as Task 20 — Railway unified Build/Runtime in the current UI), add:
+    - `VITE_SUPABASE_URL=<same as runtime SUPABASE_URL>`
+    - `VITE_SUPABASE_ANON_KEY=<same as runtime SUPABASE_ANON_KEY>`
     - `VITE_FEATURE_PLANS_PAGE=false`
-  - Notes: Railway does NOT auto-pass runtime variables to Dockerfile builds. Without these, `vite build` produces a bundle where `import.meta.env.VITE_SUPABASE_URL === undefined` → Supabase auth breaks at runtime. This is a common foot-gun; verify the build log shows the values being substituted.
+  - Notes: Railway auto-passes any variable whose name matches an `ARG` declaration in the Dockerfile through to `docker build`. Since `Dockerfile` declares `ARG VITE_SUPABASE_URL` etc., placing these in the Variables tab is enough — no separate "Build Args" section exists in the current UI. Without these, `vite build` produces a bundle where `import.meta.env.VITE_SUPABASE_URL === undefined` → Supabase auth breaks at runtime. Verify the build log shows the values being substituted (look for the bundled JS to NOT contain literal `undefined` next to `supabase`).
 
 - [ ] **Task 22: Configure Railway healthcheck**
   - File: (none — Railway dashboard, service settings → "Deploy")
