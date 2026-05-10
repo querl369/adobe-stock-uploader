@@ -1,6 +1,6 @@
 {
   "name": "adobe-stock-uploader",
-  "version": "1.0.0",
+  "version": "0.0.3",
   "description": "Adobe Stock Image Uploader - Web Interface",
   "main": "server.ts",
   "scripts": {

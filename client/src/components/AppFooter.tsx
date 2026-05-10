@@ -3,7 +3,7 @@ export function AppFooter() {
     <footer className="fixed bottom-0 left-0 right-0 z-50 px-8 py-6 backdrop-blur-sm">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
         <span className="tracking-[-0.01em] opacity-25 text-[11px]">
-          &copy; {new Date().getFullYear()}
+          &copy; {new Date().getFullYear()} &middot; v{__APP_VERSION__}
         </span>
         <div className="flex gap-6">
           <button

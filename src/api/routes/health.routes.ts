@@ -14,9 +14,18 @@ import { Router, Request, Response } from 'express';
 import { logger } from '@utils/logger';
 import OpenAI from 'openai';
 import fs from 'fs/promises';
+import { readFileSync } from 'fs';
 import path from 'path';
 
 const router = Router();
+
+// Read package.json once at startup. Path is relative to this file's compiled
+// location (project root is three levels up from src/api/routes/).
+const appVersion = (
+  JSON.parse(readFileSync(path.resolve(__dirname, '../../../package.json'), 'utf-8')) as {
+    version: string;
+  }
+).version;
 
 /**
  * Health check response format
@@ -24,6 +33,7 @@ const router = Router();
 interface HealthResponse {
   status: 'ok' | 'ready' | 'unavailable';
   timestamp: string;
+  version: string;
   checks?: {
     config: boolean;
     openai: boolean;
@@ -46,6 +56,7 @@ router.get('/', (req: Request, res: Response) => {
   const response: HealthResponse = {
     status: 'ok',
     timestamp: new Date().toISOString(),
+    version: appVersion,
   };
 
   res.status(200).json(response);
@@ -93,6 +104,7 @@ router.get('/ready', async (req: Request, res: Response) => {
     const response: HealthResponse = {
       status,
       timestamp: new Date().toISOString(),
+      version: appVersion,
       checks,
     };
 
@@ -111,6 +123,7 @@ router.get('/ready', async (req: Request, res: Response) => {
     const response: HealthResponse = {
       status: 'unavailable',
       timestamp: new Date().toISOString(),
+      version: appVersion,
       checks,
     };
 

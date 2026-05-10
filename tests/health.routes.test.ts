@@ -140,6 +140,7 @@ describe('Health Routes', () => {
       expect(response.body).toEqual({
         status: 'ok',
         timestamp: expect.any(String),
+        version: expect.stringMatching(/^\d+\.\d+\.\d+/),
       });
     });
 
@@ -149,6 +150,7 @@ describe('Health Routes', () => {
       expect(response.body).toEqual({
         status: expect.stringMatching(/^(ready|unavailable)$/),
         timestamp: expect.any(String),
+        version: expect.stringMatching(/^\d+\.\d+\.\d+/),
         checks: {
           config: expect.any(Boolean),
           openai: expect.any(Boolean),
