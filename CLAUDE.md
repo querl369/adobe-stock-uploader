@@ -37,7 +37,7 @@ There is no separate lint command. Formatting is handled by Prettier via lint-st
 - **`server.ts`** — Express entry point, mounts all routes and middleware
 - **`src/api/routes/`** — Route modules (upload, batch, csv, health)
 - **`src/api/middleware/`** — Error handler with `asyncHandler` wrapper, correlation IDs, rate limiting, session tracking
-- **`src/services/`** — Business logic layer: `MetadataService` (OpenAI Vision), `TempUrlService` (Sharp compression + temp URL hosting), `ImageProcessingService` (orchestration with p-limit concurrency), `CsvExportService`, `CategoryService` (Adobe Stock taxonomy), `MetadataValidationService`, `BatchTrackingService`, `SessionService`
+- **`src/services/`** — Business logic layer: `MetadataService` (OpenAI Vision; calls gpt-5-nano with `reasoning_effort: 'minimal'` — without it the model burns through `OPENAI_MAX_TOKENS` (4000) on internal reasoning and returns empty content), `TempUrlService` (Sharp compression + temp URL hosting), `ImageProcessingService` (orchestration with p-limit concurrency), `CsvExportService`, `CategoryService` (Adobe Stock taxonomy), `MetadataValidationService`, `BatchTrackingService`, `SessionService`
 - **`src/config/container.ts`** — Singleton DI container. Services created in dependency order, exported as `services`. Call `container.reset()` in tests
 - **`src/config/app.config.ts`** — Zod-validated env config, exits on validation failure
 - **`src/models/errors.ts`** — Typed error hierarchy: `AppError` → `ValidationError`, `NotFoundError`, `RateLimitError`, `ProcessingError`, `ExternalServiceError`
@@ -78,6 +78,10 @@ ASU-{short 10-15 words description}
 ```
 
 Examples: `ASU-Add unit tests for file manipulation and CSV writer`, `ASU-Fix image upload bug in batch processing endpoint`
+
+## Versioning
+
+`package.json` `version` is the source of truth. Bump with `npm version patch|minor|major` — project `.npmrc` auto-formats the commit as `ASU-Bump version to X.Y.Z` and creates a git tag `vX.Y.Z`. Version is surfaced in `/health` and `/health/ready` JSON (read at startup) and in the UI footer (baked at build time via Vite `define` as `__APP_VERSION__`, declared in `client/src/vite-env.d.ts`).
 
 ## Key Environment Variables
 
